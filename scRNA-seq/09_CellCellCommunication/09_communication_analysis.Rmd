@@ -1,0 +1,67 @@
+---
+title: "Communication Script - Sankey Diagram"
+output: html_notebook
+Author: Leandro Santos
+---
+# set the library path and read the necessary packages
+```{r}
+.libPaths("~/lib/Rpackages/singlecell/")
+library(networkD3)
+library(dplyr)
+library(classInt)
+library(plyr)
+library(pheatmap)
+library(grid)
+library(webshot)
+```
+
+# read the communication results retrieved from CellComm algorithm
+```{r}
+comm1 <- read.csv("~/data/mac_and_lymphocytes.txt", header = TRUE, sep = "\t")
+comm2 <- read.csv("~/data/mac_and_tumors.txt", header = TRUE, sep = "\t")
+```
+
+# subset the results by the cell type of interest
+```{r}
+macla_lymph <- comm1[(comm1$celltype_01 == "MacRec" | comm1$celltype_02 == "MacRec"),]
+write.csv(comm_macRec, "~/data/communication/macRec_lymphocytes.txt")
+
+macla_tumor <- comm2[(comm2$celltype_01 == "MacRec" | comm2$celltype_02 == "MacRec"),]
+write.csv(comm_macRec, "~/data/communication/macRec_tumors.txt")
+```
+
+# check the distribution of receptor, ligand and mean of both expression values in order to decide best cutoff values
+```{r}
+hist(macla_lymph$ligand_receptor_mean_expression, breaks = 100)
+hist(macla_lymph$ligand_mean_expression, breaks = 100)
+hist(macla_lymph$receptor_mean_expression, breaks = 100)
+
+table(macla_lymph$pvalue)
+```
+
+# apply filter values for the total amount of data
+```{r}
+macla_filter <- macla[(macla$ligand_mean_expression >= 1 & macla$receptor_mean_expression >= 1 & macla$ligand_receptor_mean_expression >= 1 & macla$pvalue < 0.002),]
+```
+
+###############
+COMMUNICATION PLOTTED AS SANKEY DIAGRAM
+
+# the communication results can be represented as sankey diagrams. For that, is necessary to creat two files:
+# nodes file: represent the cell types and communications (ligand-receptor) on the nodes. First column is the name of the nodes and second column is the number of the group in the order you want it to be displayed in the graph.
+# links file: represent the connexions between the nodes. First column is the number of the group of the first node. Second column is the number of the group of the second node. Third column dependes on your analysis. Can be the expression of the ligand, the expression of the receptor, the mean expression of both or those expressions converted as z-score (below). The fourth column (optional) another group number for coloring group.
+
+# load links and nodes files and convert expression into z-score
+# the value in the end of this step depends on the minimum value
+```{r}
+links$zscore <- scale(links$lig_recep_expression)[,1] 
+summary(links$zscore)
+links$zscore <-  links$zscore + 1.2331
+```
+
+```{r}
+sankeyNetwork(Links = links, Nodes = nodes,
+              Source = "source", Target = "target",
+              Value = "zscore", NodeID = "Name", 
+              sinksRight=FALSE, fontSize = 15, colourScale=my_color_scale, LinkGroup="group", NodeGroup="group", iterations = 0)
+```

@@ -1,0 +1,267 @@
+---
+title: "Figure S1"
+output: html_notebook
+editor_options: 
+  chunk_output_type: inline
+---
+```{r}
+set.seed(1234)
+```
+
+```{r library packages}
+suppressPackageStartupMessages({
+  library(Seurat)
+  library(dplyr)
+  library(ggplot2)
+  library(dendextend)
+  library(circlize)
+  library(ComplexHeatmap)
+  library(png)
+  library(RColorBrewer)
+  library(gridExtra)
+  library(grid)
+  library(dittoSeq)
+  library(Nebulosa)
+  library(tiff)
+  library(ggstatsplot)
+})
+```
+
+```{r}
+load("/data/S1_figure.RData")
+data = NormalizeData(data)
+```
+
+```{r}
+pal = c('Epithelial/Malignant Cells' = '#F06292',
+        'T/NK Cells' = '#0288D1', 'B Cells' = '#0097A7', 
+        'Plasmacytoid Dendritic Cells' = '#00579B', 
+         'Megakaryocytes' = '#7FCBC4',
+        'Mononuclear Phagocytes' = '#9C27B0', 'Neutrophils' = '#CE93D8',
+        'Mast Cells' = '#821764', 'Fibroblasts' = '#FFC107',
+        'Endothelial Cells' = '#FF7043', 'Low-quality' = 'gray')
+
+pal2 = c('Malignant Cells' = '#E92663',
+         'Epithelial Cells' = '#F06292', 
+         'Megakaryocytes' = '#7FCBC4',
+         'T/NK Cells' = '#0288D1', 'B Cells' = '#0097A7', 
+         'Plasmacytoid Dendritic Cells' = '#00579B', 
+         'Mononuclear Phagocytes' = '#9C27B0', 'Neutrophils' = '#CE93D8',
+         'Mast Cells' = '#821764', 'Fibroblasts' = '#FFC107',
+         'Endothelial Cells' = '#FF7043', 'Low-quality' = 'gray')
+pal3 = c(rcartocolor::carto_pal(n = 11, "Prism"),
+         rcartocolor::carto_pal(n = 3, "Safe"))
+
+pal4 = c('Malignant Cells' = '#E92663',
+         'Epithelial Cells' = '#F06292', 
+         'Megakaryocytes' = '#7FCBC4',
+         'T/NK Cells' = '#0288D1', 'B Cells' = '#0097A7', 
+         'Plasmacytoid Dendritic Cells' = '#00579B', 
+         'Mononuclear Phagocytes' = '#9C27B0', 'Neutrophils' = '#CE93D8',
+         'Mast Cells' = '#821764', 'Fibroblasts' = '#FFC107',
+         'Endothelial Cells' = '#FF7043', 'Low-quality' = 'gray')
+```
+
+```{r fig.height=5, fig.width=7}
+p1 <-
+  DimPlot(
+    data_LQ,
+    group.by = "harm_study",
+    cols = pal3,
+    shuffle = TRUE,
+    raster = TRUE
+  ) +
+  ggtitle("") +
+  theme(legend.text = element_text(size = 16, color = "black")) +
+  NoAxes() 
+```
+
+```{r}
+p2 <-
+  DimPlot(
+    data_LQ,
+    group.by = "first_celltype2",
+    split.by = "harm_tech",
+    raster = TRUE,
+    cols = pal
+  ) + theme(axis.title = element_text(size = 20)) + ggtitle("") & NoAxes()
+```
+
+```{r}
+markers <- c('KRT5', 'SLPI', 'ANKRD30A', 'VWF', 'CCL21',
+             'COL1A1', 'RGS5', 'CD79A', 'MS4A1', 'MZB1',
+             'TPSAB1', 'TPSB2', 'LYZ', 'AIF1', 'CD68', 
+             'IL7R', "CD8A", 'NKG7', 'LILRA4', 'CXCR1')
+```
+
+```{r fig.width=7, fig.height=12}
+mzb1 = plot_density(data, features = 'ENSG00000170476', pal = 'magma', raster = T) + ggtitle("MZB1")
+ms4a1 = plot_density(data, features = 'ENSG00000156738', pal = 'magma', raster = T) + ggtitle("MS4A1")
+
+vwf = plot_density(data, features = 'ENSG00000110799', pal = 'magma', raster = T) + ggtitle("VWF")
+ccl21 = plot_density(data, features = 'ENSG00000137077', pal = 'magma', raster = T) + ggtitle("CCL21")
+
+muc1 = plot_density(data, features = 'ENSG00000185499', pal = 'magma', raster = T) + ggtitle("MUC1")
+s100a1 = plot_density(data, features = 'ENSG00000160678', pal = 'magma', raster = T) + ggtitle("S100A1")
+
+col1a1 = plot_density(data, features = 'ENSG00000108821', pal = 'magma', raster = T) + ggtitle("COL1A1")
+rgs5 = plot_density(data, features = 'ENSG00000143248', pal = 'magma', raster = T) + ggtitle("RGS5")
+
+tpsab1 = plot_density(data, features = c("ENSG00000172236"), pal = 'magma', raster = T) & ggtitle("TPSAB1")
+
+lyz = plot_density(data, features = c("ENSG00000090382"), pal = 'magma', raster = T) & ggtitle("LYZ")
+aif1 = plot_density(data, features = c("ENSG00000204472"), pal = 'magma', raster = T) & ggtitle("AIF1")
+cd68 = plot_density(data, features = c("ENSG00000129226"), pal = 'magma', raster = T) & ggtitle("CD68")
+
+cxcr2 = plot_density(data, features = c("ENSG00000180871"), pal = 'magma', raster = T) & ggtitle("CXCR2")
+
+lilra4 = plot_density(data, features = 'ENSG00000239961', pal = 'magma', raster = T) + ggtitle("LILRA4")
+
+ppbp = plot_density(data, features = 'ENSG00000163736', pal = 'magma', raster = T) + ggtitle("PPBP")
+  
+il7r = plot_density(data, features = 'ENSG00000168685', pal = 'magma', raster = T) + ggtitle("IL7R")
+cd8a = plot_density(data, features = 'ENSG00000153563', pal = 'magma', raster = T) + ggtitle("CD8A")
+nkg7 = plot_density(data, features = 'ENSG00000105374', pal = 'magma', raster = T) + ggtitle("NKG7")
+
+
+pd = (mzb1|ms4a1|vwf|ccl21|muc1|s100a1) / (col1a1|rgs5|tpsab1|lyz|aif1|cd68) / (cxcr2|lilra4|ppbp|il7r|cd8a|nkg7)
+```
+
+```{r}
+data_LQ$first_celltype = ifelse(data_LQ$first_celltype == 'Platelets', 'Megakaryocytes',data_LQ$first_celltype)
+p3 <- DimPlot(data_LQ, group.by = 'first_celltype', raster = TRUE, cols = pal2) + ggtitle("") + theme(legend.text = element_text(size = 16, color = 'black')) & NoAxes()
+```
+
+```{r}
+# the next plot was developed with Scanpy in python:
+# sc.pl.matrixplot(adata, marker_genes_dict, 'first_celltype', dendrogram=False,
+#                  use_raw=False, gene_symbols='external_gene_name',
+#                  cmap='RdPu',save=True,
+#                  standard_scale = 'var', colorbar_title='', var_group_labels= None,
+#                  var_group_rotation=45, swap_axes=True, figsize=(8,5))
+
+p4 = rasterGrob(tiff::readTIFF("/data/matrixplot_ (1).tiff"))
+```
+
+```{r}
+data$first_celltype = data$first_celltype%>% as.character()
+data$first_celltype = ifelse(data$first_celltype == 'Platelets', 'Megakaryocytes',data$first_celltype)
+p5a <-
+  dittoBarPlot(
+    data,
+    "first_celltype",
+    group.by = "condition2",
+    scale = "percent",
+    color.panel = pal,
+    retain.factor.levels = TRUE
+  ) +  theme(
+    axis.text.x = element_text(
+      size = 16,
+      color = 'black',
+      angle = 90,
+      hjust = 1,
+      vjust = 0.5
+    ),
+    axis.text.y = element_text(size = 16, color = 'black'),
+    axis.title.y = element_text(size = 16, color = 'black'),
+    legend.text = element_text(size=16)
+  )  + ggtitle("") + xlab("") & NoLegend()
+
+
+p5c <-
+  dittoBarPlot(
+    data,
+    "harm_sample.type",
+    group.by = "first_celltype",
+    scale = "percent",
+    retain.factor.levels = TRUE
+  ) +  theme(
+    axis.text.x = element_text(
+      size = 16,
+      color = 'black',
+      angle = 90,
+      hjust = 1,
+      vjust = 0.5
+    ),
+    axis.text.y = element_text(size = 16, color = 'black'),
+    axis.title.y = element_text(size = 16, color = 'black'), 
+    legend.title = element_blank(),
+    legend.text = element_text(size = 16, color = 'black')
+  ) + ggtitle("") + xlab("") + scale_fill_brewer(palette = "Set1")
+
+```
+
+```{r}
+point_colors <- c("#0097A6", "#FF7043", "#FFC107", "#7F1763", "#7DCAC2", "#CC91D7", "#CC91D7", "#CC91D7", "#0087CF", "#0087CF", 
+                  "#0087CF", "#005799", "#0087CF", "#0087CF", "#0087CF", "#0087CF", "#0087CF", "#0087CF", "#0087CF", "#0087CF", 
+                  "#0B3D02", "#0B3D02", "#0B3D02", "#0B3D02", "#0B3D02", "#0B3D02", "#0B3D02", "#0B3D02", "#0B3D02", "#0B3D02", 
+                  "#0B3D02", "#C2140E", "#C2140E", "#C2140E", "#C2140E", "#C2140E", "#C2140E", "#714fb3", "#714fb3", "#714fb3", 
+                  "#714fb3", "#714fb3", "#714fb3", "#714fb3", "#714fb3", "#E82361", "#E82361", "#E82361", "#E82361", "#E82361", 
+                  "#E82361", "#E82361")
+
+# Create the plot
+rogue_data$broad_celltype = rogue_data$broad_celltype %>% as.character()
+rogue_data$broad_celltype = ifelse(rogue_data$broad_celltype == 'Platelets', 'Megakaryocytes',rogue_data$broad_celltype)
+p6 <- ggplot(rogue_data, aes(x = broad_celltype, y = rogue_value, fill = pops)) +
+  geom_boxplot(show.legend = F, alpha = 0.2, color = "black", fill = "gray") +
+  geom_point(position = position_jitterdodge(jitter.width = 0, dodge.width = 0.3, seed = 1234),
+             aes(group = factor(pops)), show.legend = F, size = 2, color = point_colors) +
+  theme(panel.grid.major.x = element_blank(),
+        axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 16, color = "black"),
+        axis.title.y = element_text(size = 18),
+        axis.title.x = element_blank(),
+        axis.text.y = element_text(size = 20, color = "black"),
+        panel.background = element_rect(fill = "#FFFFFF"),
+        axis.line = element_line(size = 0.75, colour = "black", linetype = 1),
+        plot.margin = unit(c(0.5, 0.5, 0.5, 0.5), "lines")) +
+  ylab("ROGUE value")
+
+```
+
+```{r}
+final_rogue <- final_rogue[!(final_rogue$pops %in% c('B cells', 'Endothelial', 'Fibroblasts', 'Megakaryocytes', 'NK_cyto', 
+                                                     'NK_rest', 'NKT', 'pDC', 'TCD4_em', 'TCD4_ex', 'TCD4_naive', 'TCD4_reg', 
+                                                     'TCD8_em', 'TCD8_ex', 'TCD8_naive', 'TGD', 'breast_tumor', 'colorectal_tumor',
+                                                     'liver_tumor', 'lung_tumor', 'melanoma_tumor', 'ovary_tumor', 'uveal_tumor')), ]
+
+final_rogue$broad_celltype[5:15] <- "Macrophages" 
+final_rogue$broad_celltype[16:21] <- "Monocytes"
+final_rogue$broad_celltype[22:28] <- "Conventional Dendritic cells"
+final_rogue$broad_celltype = final_rogue$broad_celltype %>% as.character()
+final_rogue$broad_celltype = ifelse(final_rogue$pops %in% c("cDC2_FCGR3A", 'cDC_LAMP3', 'cDC1_CLEC9A','cDC2_CD14','cDC2_CD207','cDC2_CXCL8','cDC2B_FCER1A', "cDC2A_AREG"), "Conventional Dendritic Cells", final_rogue$broad_celltype)
+
+final_rogue$rogue_value <- as.numeric(final_rogue$rogue_value)
+
+final_rogue$broad_celltype <- gsub("cells", "Cells", final_rogue$broad_celltype)
+
+final_rogue$broad_celltype = factor(final_rogue$broad_celltype, levels = c("Mast Cells", "Neutrophils", "Macrophages", 
+                                                                           "Monocytes", "Conventional Dendritic Cells"))
+
+fill <- c('#5BA4A6', '#C95B3C', '#C95B3C', '#C95B3C', '#C40EB7', '#C40EB7', '#C40EB7', '#C40EB7', '#C40EB7', '#C40EB7', '#C40EB7',
+          '#C40EB7', '#C40EB7', '#C40EB7', '#C40EB7', '#BA3F4F', '#BA3F4F', '#BA3F4F', '#BA3F4F', '#BA3F4F', '#BA3F4F',
+          "#45A3D5", "#45A3D5", "#45A3D5", "#45A3D5", "#45A3D5", "#45A3D5", "#45A3D5", "#45A3D5")
+
+p7 = ggplot(final_rogue, aes(x=broad_celltype, y=rogue_value, fill=pops))+
+  geom_boxplot(show.legend = F, alpha=0.2, color="black", fill="gray") +
+  geom_point(position=position_jitterdodge(jitter.width=0, dodge.width = 0.3, seed = 1234), 
+             aes(group = factor(pops)), show.legend = F, size = 2, color = fill) +
+  theme(panel.grid.major.x = element_blank(), axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 16, color = "black"), axis.title.y = element_text(size = 18),
+        axis.title.x = element_blank(), axis.text.y = element_text(size = 17, color = "black"), panel.background = element_rect(fill = "#FFFFFF"), axis.line = element_line(size = 0.75, colour = "black", linetype=1)) +
+  ylab("ROGUE value")+
+  theme(plot.margin = unit(c(0.5,0.5,0.5,0.5), "lines"))
+```
+
+```{r fig.height=17.55, fig.width=17.55}
+#painel_1b =  grid.arrange(blank, p2a, p2b, ncol=3, widths = c(0.7, 0.7, 0.25))
+panelS1a = cowplot::plot_grid(p1, (p2 &NoLegend()), ncol=2, nrow=1, rel_widths = c(0.9,0.9), labels = c("a", "b"), label_size = 20) 
+panelS1b = cowplot::plot_grid(p3,p4, ncol=2, nrow=1, rel_widths = c(1.25,0.9), labels = c("c", "d"), hjust = -0.5, vjust = -0.5, label_size = 20)
+panelS1c = cowplot::plot_grid(pd&NoAxes(), labels = c("e"), hjust = -0.5, vjust = -0.5, label_size = 20)
+panelS1d = cowplot::plot_grid((p5c+ xlab("") + ylab("") + coord_flip()),(p5a + ylab("")+ coord_flip()), ncol=2, nrow=1, rel_widths = c(0.6,0.4), labels = c("f", "g"), hjust = -0.5, vjust = -0.5, label_size = 20)
+panelS1e = cowplot::plot_grid((p6+ ylab("")),(p7 + ylab("")), ncol=2, nrow=1, rel_widths = c(0.5, 0.5), labels = c("h", "i"), hjust = -0.5, vjust = -0.5, label_size = 20)
+
+panel_s1 = patchwork::wrap_plots(panelS1a, panelS1b, panelS1c, panelS1d, panelS1e, ncol = 1) + patchwork::plot_layout(heights = c(0.9,1,1,0.7, 0.9))
+```
+
+```{r fig.height=30, fig.width=20}
+panel_s1
+```

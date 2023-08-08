@@ -1,0 +1,97 @@
+---
+title: "Figure S9 - T/NK subdivision"
+output: html_notebook
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r library packages}
+suppressPackageStartupMessages({
+  library(Seurat)
+  library(dplyr)
+  library(ggplot2)
+  library(dittoSeq)
+  library(RColorBrewer)
+  library(gridExtra)
+  library(grid)
+  library(ggpubr)
+  library(dittoSeq)
+  library(clusterProfiler)
+  library(ReactomePA)
+  library(AnnotationDbi)
+  library(EnsDb.Hsapiens.v86)
+  library(ggplotify)
+})
+```
+
+```{r}
+load("/data/S9_figure.RData")
+```
+
+```{r}
+lymph_pal =  c("TCD4_ex"="#003f5c" , "TCD8_naive"= "#384d77", "TCD4_reg"="#695889",   "TCD4_em" = "#9a6391",
+"TCD4_naive"= "#c56f8f", "TCD8_em" = "#e68285",  "TCD8_ex"= "#fa9e7a", "TGD"= "#ffbf74", "NK_rest" = "#488f31", "NK_cyto" = "#de425b", "NKT" = '#f9a160')
+```
+
+```{r fig.height=4, fig.width=6}
+p1 <- DimPlot(data, group.by = 'celltype', reduction = "UMAP", pt.size = 1, cols = lymph_pal, shuffle = T, seed = 1024, raster = T) + ggtitle("") + NoAxes() + NoLegend()
+p1 <- LabelClusters(p1, id = "celltype", fontface = "bold", color = "white", repel = T, box = T, size = 5)
+```
+
+```{r}
+gene = c('NCR1', 'TYROBP','XCL1', 'AREG', 'FGFBP2', 'FCGR3A',  'CD3D', 'CD3E', 'CD4','CCR7', 'LEF1', 'SELL', 'TCF7', 'IL7R', 'CD40LG', 'ANXA1',  'FOXP3', 'CTLA4', 'PDCD1', 'CD200', 'CD8A', 'CD8B', 'GZMK', 'EOMES', 'ITM2C', 'GZMB', 'LAG3', 'TRDV1', 'TRDV2', 'TRGV9')
+
+expr_a <- averages@assays$RNA@counts %>% as.data.frame()
+indx <- which(rownames(expr_a) %in% gene)
+expr_a <- expr_a[indx,]
+expr_a$gene <- rownames(expr_a) 
+expr_a <- expr_a %>%
+  mutate(gene =  factor(gene, levels =c('NCR1', 'TYROBP','XCL1', 'AREG', 'FGFBP2', 'FCGR3A',  'CD3D', 'CD3E', 'CD4','CCR7', 'LEF1', 'SELL', 'TCF7', 'IL7R', 'CD40LG', 'ANXA1',  'FOXP3', 'CTLA4', 'PDCD1', 'CD200', 'CD8A', 'CD8B', 'GZMK', 'EOMES', 'ITM2C', 'GZMB', 'LAG3', 'TRDV1', 'TRDV2', 'TRGV9'))) %>%
+  arrange(gene)
+
+exp = expr_a[ ,1:11]
+mat = as.matrix(exp)
+base_mean = rowMeans(mat)
+mat_scaled = t(apply(mat, 1, scale))
+colnames(mat_scaled)  <- colnames(mat)
+
+gene = gene %>% as.data.frame()
+gene$gene = gene$.
+gene$. = NULL
+expr_a <- inner_join(expr_a, gene)
+
+celltypes <- c("NK_rest", "NK_cyto", "NKT", "TCD4_naive",  "TCD4_em", "TCD4_reg", "TCD4_ex", "TCD8_naive", "TCD8_em", "TCD8_ex", "TGD")
+
+ann_colors <- list(Celltype = c("TCD4_ex"="#003f5c" , "TCD8_naive"= "#384d77", "TCD4_reg"="#695889",   "TCD4_em" = "#9a6391",
+"TCD4_naive"= "#c56f8f", "TCD8_em" = "#e68285",  "TCD8_ex"= "#fa9e7a", "TGD"= "#ffbf74", "NK_rest" = "#488f31", "NK_cyto" = "#de425b", "NKT" = '#f9a160'))
+
+levels <- data.frame(Celltype = factor(colnames(mat_scaled), levels = celltypes))
+
+levels <- levels %>%
+  mutate(Celltype = factor(colnames(mat_scaled), levels = celltypes)) %>%
+  arrange(Celltype)    
+
+mat_scaled <- mat_scaled[, celltypes]
+
+breaksList = seq(-1.5, 1.5, by = 0.5)
+
+p2 = ComplexHeatmap::pheatmap(
+  mat_scaled,
+  name = 'z-score',
+  annotation_col = levels,
+  annotation_colors = ann_colors,
+  cluster_rows = FALSE,
+  show_colnames = F,
+  breaks = breaksList,
+  cluster_cols = FALSE,
+  color = colorRampPalette(c("navy", "white", "firebrick3"))(50)
+) %>% ggplotify::as.ggplot()
+
+```
+
+```{r fig.height=6, fig.width=10}
+panelS9 = cowplot::plot_grid(p1,p2, ncol=2, nrow=1, rel_widths = c(1,1), labels = c( "A", "B"), label_size = 20, hjust = c(0, 0.7)) 
+
+panelS9
+```
+

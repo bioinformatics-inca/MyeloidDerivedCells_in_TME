@@ -1,0 +1,308 @@
+---
+title: "Figure 04 - funcional signatures for mac"
+output: html_notebook
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r library packages}
+suppressPackageStartupMessages({
+  library(Seurat)
+  library(dplyr)
+  library(ggplot2)
+  library(dittoSeq)
+  library(RColorBrewer)
+  library(gridExtra)
+  library(grid)
+  library(ggpubr)
+  library(dittoSeq)
+  library(clusterProfiler)
+  library(ReactomePA)
+  library(AnnotationDbi)
+  library(EnsDb.Hsapiens.v86)
+  library(ggplotify)
+  library(caret)
+  
+})
+```
+
+```{r}
+load("/data/04_figure_final.RData")
+```
+
+```{r}
+bar_tema = list(
+  theme(
+    plot.title = element_text(size = 0),
+    plot.subtitle = element_text(size = 0),
+    axis.text.x = element_text(
+      size = 12,
+      angle = 0,
+      hjust = 0.5,
+      color = 'black'
+    ),
+    axis.text.y = element_text(size = 12, color = 'black'),
+    axis.title.y = element_text(size = 12),
+    axis.title.x = element_text(size = 12),
+    legend.text = element_text(size = 12),
+  )
+)
+
+dp_tema <- list(
+  theme(
+    plot.title = element_text(size = 0),
+    plot.subtitle = element_text(size = 0),
+    axis.text.x = element_text(size = 18, angle = 90, hjust = 1, vjust = 1, color = 'black'),
+    axis.text.y = element_text(size = 18, color = 'black'),
+    axis.title.y = element_text(size = 18),
+    axis.title.x = element_text(size = 18),
+    legend.text = element_text(size = 18)
+))
+
+macro_pal = c(
+  "Mac_Alv-like" = "#8B87FE",
+  "Mac_Angio" = "#DC4A82",
+  "Mac_Hypo" = "#FFA8DE",
+  "Mac_IFN" = "#6B6AF4",
+  "Mac_LA" = "#BD26DE",
+  "Mac_Prolif" = "#CFB8D9",
+  "Mac_Rec" = "#BF8FFF",
+  "Mac_AgPres" = "#00AEEE",
+  "RTM_IM" = "#1be19f",
+  "RTM_IFN" = "#a2db71",
+  "RTM_LA" = "#4ddfc8",
+  "RTM-like_MT" = "#579C99"
+)
+```
+
+```{r}
+data$celltype <- ifelse(data$celltype == 'Mac_Reg', 'Mac_AgPres', data$celltype)
+Idents(data) = 'celltype'
+Idents(data) = factor(Idents(data), levels = c("Mac_Alv-like", "Mac_Angio", "Mac_Hypo", "Mac_IFN", "RTM_IFN", "Mac_LA", "RTM_LA", "Mac_Prolif", "Mac_Rec", "Mac_AgPres", "RTM_IM", "RTM-like_MT" ))
+```
+
+
+```{r}
+pal = rcartocolor::carto_pal(n=7, "Prism")
+p1A <- DimPlot(data, group.by = 'rcelltype',reduction = "UMAP", pt.size = 2.5, cols = pal, raster = T, label = F,repel = T) + ggtitle("") + NoAxes()
+```
+
+
+```{r}
+MK <- c('FOLR2', 'PLTP', 'LYVE1', 'S100A9', 'CD300E', 'VCAN', 'FCN1')
+
+p1B = DotPlot(
+  data, group.by = 'rcelltype', 
+  features = MK,
+  col.min = -.5, col.max = 1, scale.max = 40,
+  cols = c('white', '#BD26DE')
+) + theme(axis.text.x = element_text(angle = 45, hjust = 1)) + xlab("") + ylab("") + coord_flip()
+```
+
+
+```{r}
+VCAN = plot_density(data, features = c('VCAN'), joint = F, pal = 'magma', reduction = "UMAP", raster = T) & NoAxes()
+FCN1 = plot_density(data, features = c('FCN1'), joint = F, pal = 'magma', reduction = "UMAP", raster = T) & NoAxes()
+CD300E = plot_density(data, features = c('CD300E'), joint = F, pal = 'magma', reduction = "UMAP", raster = T) & NoAxes()
+S100A9 = plot_density(data, features = c('S100A9'), joint = F, pal = 'magma', reduction = "UMAP", raster = T) & NoAxes()
+
+LYVE1 = plot_density(data, features = c('LYVE1'), joint = T, pal = 'magma', reduction = "UMAP", raster = T) & NoAxes()
+FOLR2 = plot_density(data, features = c('FOLR2'), joint = T, pal = 'magma', reduction = "UMAP", raster = T) & NoAxes()
+PLTP = plot_density(data, features = c('PLTP'), joint = T, pal = 'magma', reduction = "UMAP", raster = T) & NoAxes()
+
+RTM_REC = plot_density(data, features = c('FCN1', 'PLTP'), joint = T, pal = 'magma', reduction = "UMAP", raster = T) & NoAxes()
+
+
+p1C = (
+  (VCAN)/ (FCN1)/ (CD300E)/ (S100A9) |
+  (LYVE1)/ (FOLR2)/ (PLTP)/ (RTM_REC[[3]]) )
+```
+
+```{r}
+p1D <- DimPlot(data, reduction = "UMAP", pt.size = 2.5, cols = macro_pal, shuffle = T, seed = 1024, raster = T) + ggtitle("") + NoAxes()
+```
+
+```{r}
+p1E <- dittoBarPlot(data, group.by = "harm_sample.type", "celltype", scale = "percent", color.panel = macro_pal) + coord_flip() + bar_tema + xlab("") + NoLegend()
+```
+```{r}
+MK <- c("PPARG", "VEGFA", "SLC2A1", "IFIT2", "LPL", "MKI67", "CCR2","CX3CR1", "SEPP1","CXCL9", "LIPA", "MT1E")
+
+data$revcelltype <- factor(Idents(data), levels = rev(c("Mac_Alv-like", "Mac_Angio",    "Mac_Hypo", "Mac_IFN", "Mac_LA", "Mac_Prolif", "Mac_Rec", "Mac_AgPres", "RTM_IM","RTM_IFN", "RTM_LA",  "RTM-like_MT")))
+
+p1F = DotPlot(
+  data, group.by = 'revcelltype', 
+  features = MK,
+  col.min = 0, col.max = 1.5,
+  cols = c('white', '#BD26DE')
+) + theme(axis.text.x = element_text(angle = 45, hjust = 1)) + xlab("") + ylab("")
+```
+
+
+```{r}
+Alv = data.frame(gene = unique(c("MSR1", 'FABP4', "ALDH2", "CD52", "LGLS3", "MCEMP1", "PPARG", "RGP4")), Phenotype = "Alveolar-like")
+
+Angio_TAMs = data.frame(gene = unique(c("CD300E", "CD44", "CD55", "CEBPB", 'CLEC5A', "EREG", "FLT1", "IL1B", "IL1RN", 'IL8', "OLR1", "S100A12", "SERPINB2", "THBS1", "TIMP1", "VCAN", "VEGFA")), Phenotype = "Angiogenesis")
+
+hypoxia <- read.delim2("/data/genesets_for_score/geneset_hypoxia_att.txt", header = FALSE)
+hypoxia <- data.frame(gene = unique(c(hypoxia[-1, ])), Phenotype = "Hypoxia")
+p = DotPlot(data, features = unique(hypoxia$gene)) + theme(axis.text.x = element_text(angle = 45, hjust = 1)) + xlab("") + ylab("") + coord_flip()
+p$data = subset(p$data, subset = id == "Mac_Hypo")
+p$data %>%
+  top_n(n = 20, wt = avg.exp.scaled) -> top5
+top5 %>%
+  top_n(n = 15, wt = pct.exp) -> top5
+hypoxia = subset(p$data, subset = features.plot %in% top5$features.plot)
+hypoxia <- data.frame(gene = unique(hypoxia$features.plot), Phenotype = "Hypoxia")
+
+IFN_TAMs <- data.frame(gene = unique(c("CASP1", "CASP4", "CCL2", "CCL3", "CCL4", "CCL7", "CCL8", "CD274", "CD40", "CXCL9", "CXCL10", "CXCL11", "IDO1", "IFI6", 'IFIT1', "IFIT2", "IFIT3", 'IFITM1', "IFIT3", 'IRF1', "IRF7", "ISG15", "LAMP3", "PDCD1LG2", "TNFSF10", "C1QA", "C1QC", "CD38", "IL4I1", "ISG15", "TNFSF10", "IFI44L")), Phenotype = "Interferon-primed")
+
+Prolif = data.frame(gene = c("MKI67", "STMN1", "TOP2A"), Phenotype = "Proliferative")
+
+LA_TAMs = data.frame(gene = unique(c("ACP5", "APOE", "APOC1", "C1QA", "C1QC", "CCL18","CD36", "CD63", "CHI3L1", "CTSB", "CTSD", "FABP5", "GPNMB", "LGALS3", "LIPA", 'LPL', "MMP7", "MMP9", "MMP12", "MRC1", "NR1H3", "PLA2G7", "SPARC", "SPP1", "TREM2")), Phenotype = "Lipid-Associated")
+
+Rec = data.frame(gene = unique(c("SELL", "CCR2", 'AREG', "FCN1", "LGALS2", "SOCS3", "TLR2")), Phenotype = "Recruited")
+
+AgPres_TAMs = data.frame(gene = unique(c("CD80", "CD86", "CX3CR1", "HLA-DRA", "HLA-DPA1", "HLA-DPB1", "HLA-DRB1", "HLA-DQB1", "HLA-DQA1")), Phenotype = "Antigen Presentation")
+
+Int = data.frame(gene = unique(c("SLC40A1", "F13A1", 'LYVE1', "MAF", "PLTP", "SEPP1","IRF8", "TGFB2", "STAB1", "IER3", "FOSB", "EGR1", "NR4A2", "IL1B", "CXCL8", "CXCL3", "CXCL1")), Phenotype = "Interstitial")
+
+Metal = data.frame(gene = unique(c('LYVE1', 'PLTP', 'TIMP1', 'HAMP', 'PDK4', 'MT1G','MT2A','MT1E','MT1X','MT1F','MT1H', 'MTG1E', 'MTG1M')), Phenotype = "Metallothioneins")
+
+
+genes = rbind(Alv, Angio_TAMs, hypoxia, IFN_TAMs, LA_TAMs, Prolif, Rec, AgPres_TAMs, Int,Metal)
+
+genes <- data.frame(genes[!duplicated(genes$gene), ])
+```
+
+```{r}
+expr_a <- averages@assays$RNA@counts %>% as.data.frame()
+colnames(expr_a) <- ifelse(colnames(expr_a) == 'Mac_Reg', 'Mac_AgPres', colnames(expr_a))
+indx <- which(rownames(expr_a) %in% genes$gene)
+expr_a <- expr_a[indx,]
+expr_a$gene <- rownames(expr_a) 
+expr_a <- expr_a %>%
+  mutate(gene =  factor(gene, levels = genes$gene)) %>%
+  arrange(gene)
+
+exp = expr_a[ , 1:12]
+mat = as.matrix(exp)
+base_mean = rowMeans(mat)
+mat_scaled = t(apply(mat, 1, scale))
+colnames(mat_scaled)  <- colnames(mat)
+
+expr_a <- inner_join(expr_a, genes)
+```
+
+```{r}
+annotation_row = data.frame(Phenotype = expr_a$Phenotype)
+
+col <- scales::hue_pal()(7)
+
+ann_colors <- list(
+  Phenotype = c(
+    "Alveolar-like" = "#2B7CBE",
+    "Angiogenesis" = "#C83E93",
+    "Hypoxia" = "#EAC53D",
+    "Interferon-primed" = "#8FC380",
+    "Lipid-Associated" = "#EB863C",
+    "Proliferative" = "#835BA2",
+    "Recruited" = "#F6474E",
+    "Antigen Presentation" = "#8E2529",
+    "Interstitial" = "#00BFC4",
+    "Metallothioneins" = "#008983"
+  ),
+  Celltype = c("Mac_Alv-like" = "#8B87FE",
+        "Mac_Angio" = "#DC4A82",
+        "Mac_Hypo" = "#FFA8DE",
+        "Mac_IFN"= "#6B6AF4",
+        "Mac_LA" = "#BD26DE",
+        "Mac_Prolif"= "#CFB8D9",
+        "Mac_Rec" = "#BF8FFF",
+        "Mac_AgPres" = "#00AEEE",
+        "RTM_IM"= "#1be19f",
+        "RTM_IFN" = "#a2db71",
+        "RTM_LA"= "#4ddfc8", 
+        "RTM-like_MT"= "#579C99")
+)
+
+annotation_col <- list()
+
+levels = c("Mac_Alv-like",
+        "Mac_Angio",
+        "Mac_Hypo",
+        "Mac_IFN",
+        "RTM_IFN",
+        "Mac_LA",
+        "RTM_LA", 
+        "Mac_Prolif",
+        "Mac_Rec",
+        "Mac_AgPres",
+        "RTM_IM",
+        "RTM-like_MT" )
+m1_levels <- data.frame(Celltype = factor(colnames(mat_scaled), levels = levels))
+
+
+m1_levels <- m1_levels %>%
+  mutate(Celltype =  factor(colnames(mat_scaled), levels = levels)) %>%
+  arrange(Celltype)    
+
+mat_scaled <- mat_scaled[, levels]
+```
+
+```{r}
+p1G = ComplexHeatmap::pheatmap(mat_scaled, name = 'z_score', annotation_col = m1_levels, annotation_colors = ann_colors, annotation_row = annotation_row, cluster_rows = FALSE, cluster_cols = FALSE, gaps_row = c(6, 22,37,64,84,87,94,103,118),scale = 'row', show_colnames = F, color = colorRampPalette(c("navy", "white", "firebrick3"))(50))%>% ggplotify::as.ggplot()
+```
+
+```{r fig.height=20, fig.width=10}
+p1G
+```
+```{r}
+p1H = pathMacro + dp_tema + ylab("") + xlab("")
+```
+
+```{r}
+colnames(pathways_summary_short) <- ifelse(colnames(pathways_summary_short) == 'Mac_Reg', 'Mac_AgPres', colnames(pathways_summary_short))
+pathways_summary_short = pathways_summary_short %>% as.data.frame()
+
+pathways_summary_short$path = rownames(pathways_summary_short) #%>% as.character()
+pathways_summary_short$path <- factor(as.character(pathways_summary_short$path), levels = c("Oxidative phosphorylation", "NAD metabolism", "Transport, mitochondrial",  "Citric acid cycle", "Glycolysis/gluconeogenesis", "Fatty acid synthesis", "Fatty acid oxidation", "Sphingolipid metabolism", "Glycerophospholipid metabolism", "Glycosphingolipid metabolism", "Arginine and Proline Metabolism"))
+pathways_summary_short <- pathways_summary_short %>%
+  arrange(path)
+rownames(pathways_summary_short) = pathways_summary_short$path
+pathways_summary_short$path = NULL
+
+pathways_summary_short = pathways_summary_short %>% as.matrix()
+
+col = colorRampPalette(c("navy", "white", "firebrick3"))
+p1I = pheatmap(t(pathways_summary_short), scale = 'row', color = col(100), treeheight_col = 5, treeheight_row = 10, fontsize_row = 12, fontsize_col = 12, cluster_cols = F, name = 'Scaled Expression') %>% ggplotify::as.ggplot()
+```
+
+```{r fig.width=20, fig.height=17}
+panel1AB = cowplot::plot_grid(p1A,p1B, ncol=2, nrow=1, rel_widths = c(0.8,1), heights = c(1), labels = c("a", "b"), label_size = 20)
+panel1DE = cowplot::plot_grid(p1D, p1E, ncol=1, nrow=2, rel_heights = c(0.7,0.3), heights = c(1), labels = c("d", "e"), label_size = 20)
+panel1F <- cowplot::plot_grid(p1F, ncol=1, nrow=1, labels = c("f"), label_size = 20)
+panel1DEF = cowplot::plot_grid(panel1DE, panel1F, ncol=2, nrow=1, rel_widths = c(0.8,1), heights = c(1))
+
+panel1ABDEF = cowplot::plot_grid(panel1AB, panel1DEF, ncol=1, nrow=2, rel_heights = c(0.4,0.6), heights = c(1), hjust = c(-0.5,1,-0.5))
+panel1C <- cowplot::plot_grid(p1C, ncol=1, nrow=1, labels = c("c"), label_size = 20, hjust = -0.5, vjust = 3)
+
+panel1ABDEF_C = cowplot::plot_grid(panel1ABDEF, panel1C, ncol=2, nrow=1, rel_widths = c(1,0.8), heights = c(1), hjust = c(-0.5,1,-0.5))
+
+panel1G <- cowplot::plot_grid(p1G, ncol=1, nrow=1, labels = c("g"), label_size = 20)
+
+p1J = patchwork::plot_spacer() + theme(panel.background = (element_rect(fill = 'white', colour = 'white'))) 
+panel1J <- cowplot::plot_grid(p1J, ncol=1, nrow=1, labels = c("h"), label_size = 20)
+
+panel1HI <- cowplot::plot_grid(p1H,p1I,p1J, ncol=2, nrow=1, rel_widths = c(0.8,0.4), labels = c("h", "i"), hjust = c(-0.5,1,-0.5), label_size = 20)
+p1J <- patchwork::plot_spacer() + theme(panel.background = (element_rect(fill = 'white', colour = 'white'))) 
+
+panel1HIJ <- cowplot::plot_grid(panel1HI, panel1J, ncol = 1, nrow = 2)
+panel1GHIJ <- cowplot::plot_grid(panel1G, panel1HIJ, ncol = 2, nrow = 1, rel_widths = c(0.4,1))
+
+panel <- cowplot::plot_grid(panel1ABDEF_C, panel1GHIJ, ncol = 1, nrow = 2, rel_heights = c(0.4,0.6))
+```
+
+```{r fig.width=24, fig.height=30}
+panel
+```

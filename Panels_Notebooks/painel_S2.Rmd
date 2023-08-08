@@ -1,0 +1,209 @@
+---
+title: "Figure S2 - Neutrophils"
+output: html_notebook
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r}
+set.seed(134)
+```
+
+```{r library packages}
+suppressPackageStartupMessages({
+  library(Seurat)
+  library(dplyr)
+  library(ggplot2)
+  library(dittoSeq)
+  library(RColorBrewer)
+  library(gridExtra)
+  library(grid)
+  # library(clusterProfiler)
+  # library(ReactomePA)
+  # library(AnnotationDbi)
+  library(EnsDb.Hsapiens.v86)
+  library(Nebulosa)
+  library(ComplexHeatmap)
+})
+```
+
+```{r}
+load("/data/S2_figure.RData")
+data = NormalizeData(data)
+```
+
+```{r}
+pal <- c("#550000ff", "#c83737ff", "#ff8080ff")
+
+pal1 = c('Neutrophil_TAGLN2' = '#550000ff', 'Neutrophil_MMP9' = '#c83737ff', 'Neutrophil_CXCL8' = '#ff8080ff')
+
+bar_tema = list(
+  theme(
+    plot.title = element_text(size = 20, face = "bold"),
+    plot.subtitle = element_text(size = 20),
+    axis.text.x = element_text(
+      size = 20,
+      angle = 90,
+      color = 'black',
+      hjust = 1,
+      vjust = 0.5
+    ),
+    axis.text.y = element_text(
+      size = 20,
+      color = 'black',
+      hjust = 1,
+      vjust = 0.5
+    ),
+    axis.title.y = element_text(size = 20),
+    axis.title.x = element_text(size = 20),
+    legend.text = element_text(size = 20)
+  )
+)
+
+dp_tema <- list(
+  theme(
+    plot.title = element_text(size = 12, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.text = element_text(size = 20, colour = 'black'),
+    axis.text.x = element_text(
+      angle = 90,
+      hjust = 1,
+      vjust = 0.5
+    ),
+    axis.title = element_text(size = 12),
+    legend.text = element_text(size = 20)
+  )
+)
+```
+
+```{r}
+p1 <- DimPlot(data, group.by = 'celltype', raster = T, pt.size = 2.5, shuffle = T, cols = pal, seed = 1) + ggtitle("") & NoAxes() & NoLegend()
+
+p1 <- LabelClusters(p1, id = "celltype", fontface = "bold", color = "white", repel = T, box = T, size = 5)
+```
+
+```{r}
+tag = plot_density(data, features = 'ENSG00000158710', pal = 'magma', reduction = "umap") + ggtitle("TAGLN2")
+cxcl8 = plot_density(data, features = 'ENSG00000169429', pal = 'magma', reduction = "umap") + ggtitle("CXCL8")
+mmp9 = plot_density(data, features = 'ENSG00000100985', pal = 'magma', reduction = "umap") + ggtitle("MMP9")
+
+p2 = (tag | cxcl8 | mmp9)
+```
+
+```{r}
+gene_id <- c("CXCL8", "MMP9", "TAGLN2")
+
+ensbl <- mapIds(EnsDb.Hsapiens.v86, keys = gene_id,'GENEID','SYMBOL')
+
+p3 <- DotPlot(
+  data,
+  features = ensbl,
+  col.min = 0, 
+  cols=c('white', '#5B006F'),
+  scale = T,
+  dot.scale = 10,
+  dot.min = 0.25
+)
+
+p3$data$features.plot <- factor(gene_id, levels = gene_id)
+
+p3 <-
+  p3 + ylab("") + xlab("") + dp_tema  + guides(color = guide_colorbar(title = "Scaled Average Expression"))
+```
+
+```{r}
+top10 <- deg %>% group_by(cluster) %>% top_n(n = 8, wt = avg_log2FC)
+top10$cluster <- factor(top10$cluster, levels = c("Neutrophil_CXCL8", "Neutrophil_MMP9",  "Neutrophil_TAGLN2"))
+top10 <- top10 %>% arrange(cluster)
+
+
+averages <-
+  AverageExpression(data, return.seurat = TRUE, group.by = 'celltype')
+averages$celltype <- rownames(as.data.frame(averages@meta.data))
+averages <- NormalizeData(averages)
+averages <- ScaleData(averages)
+#averages@active.ident %>% table()
+#averages$celltype <- Idents(averages)
+```
+
+```{r}
+expr_a <- averages@assays$RNA@counts %>% as.data.frame()
+
+ensbl <- mapIds(EnsDb.Hsapiens.v86, keys = rownames(expr_a),'SYMBOL','GENEID')
+expr_a$geneid <- ensbl
+expr_a <- expr_a %>% subset(!is.na(geneid))
+rownames(expr_a) = expr_a$geneid
+expr_a$geneid = NULL
+
+```
+
+
+```{r}
+indx <- which(rownames(expr_a) %in% top10$Gene)
+expr_a <- expr_a[indx,]
+expr_a$gene <- rownames(expr_a) 
+expr_a <- expr_a %>%
+  mutate(gene =  factor(gene, levels = top10$Gene)) %>%
+  arrange(gene)
+
+mat = as.matrix(expr_a[, !grepl("gene", colnames(expr_a))])
+base_mean = rowMeans(mat)
+mat_scaled = t(apply(mat, 1, scale))
+colnames(mat_scaled)  <- colnames(mat)
+
+expr_a <- inner_join(expr_a, top10)
+
+ann_colors <- list(Celltype = c()) # pal: "celltype" = "color"
+
+ann_colors <- list(
+    Celltype = c('Neutrophil_TAGLN2' = '#550000ff', 'Neutrophil_MMP9' = '#c83737ff', 'Neutrophil_CXCL8' = '#ff8080ff')
+)
+
+levels <- data.frame(Celltype = factor(colnames(mat_scaled), levels =  c("Neutrophil_CXCL8", "Neutrophil_MMP9",  "Neutrophil_TAGLN2")))
+
+levels <- levels %>%
+  mutate(Celltype =  factor(colnames(mat_scaled), levels =  c("Neutrophil_CXCL8", "Neutrophil_MMP9",  "Neutrophil_TAGLN2"))) %>%
+  arrange(Celltype)    
+
+mat_scaled <- mat_scaled[,  c("Neutrophil_CXCL8", "Neutrophil_MMP9",  "Neutrophil_TAGLN2")]
+breaksList = seq(-1.5, 1.5, by = 1)
+
+p4 = ComplexHeatmap::pheatmap(mat_scaled, name = "z-score", cluster_rows = FALSE, cluster_cols = FALSE,breaks = breaksList, annotation_colors = ann_colors, annotation_col = levels, show_colnames = F, color = colorRampPalette(c("navy", "white", "firebrick3"))(50)) %>% ggplotify::as.ggplot()
+```
+
+```{r PATHS}
+# pathNeutr = previously defined based on pathway analysis
+p5 =  pathNeutr + dp_tema + ylab("") + xlab("")
+```
+
+```{r}
+p6 <- dittoBarPlot(data, group.by = 'harm_sample.type', var = 'celltype', scale = "count", color.panel = rev(pal), retain.factor.levels = FALSE) + bar_tema + ggtitle("") + xlab("") &NoLegend()
+```
+
+```{r}
+p7 <- dittoBarPlot(data, group.by = 'condition2', var = 'celltype', scale = "count", color.panel = rev(pal), retain.factor.levels = FALSE) + bar_tema + ggtitle("") + xlab("") &NoLegend()
+```
+
+```{r}
+p8 <- dittoBarPlot(data, group.by = "harm_sample.type", "celltype", scale = "percent", color.panel = rev(pal)) + xlab("") + bar_tema + ggtitle("")
+```
+
+```{r}
+p9 <- dittoBarPlot(data, group.by = "condition2", "celltype", scale = "percent", color.panel = rev(pal)) +  xlab("") + bar_tema + ggtitle("")
+```
+
+```{r fig.height=17.55, fig.width=20}
+panel2a = cowplot::plot_grid(p1,p3, ncol=2, nrow=1, rel_widths = c(0.4,0.8), heights = c(1), labels = c("a", "b"),  label_size = 20)
+panel2a2 = cowplot::plot_grid(p2&NoAxes(), ncol=1, nrow=1, heights = c(1), labels = c("c", "", ""),hjust = -0.5, vjust = -0.5,  label_size = 20)
+panel2b = cowplot::plot_grid(p4,p5, ncol=2, nrow=1, rel_widths = c(1), heights = c(1), labels = c("d", "e"), hjust = -0.5, vjust = -0.5,label_size = 20)
+panel2c = cowplot::plot_grid(p6,p7, ncol=2, nrow=1, rel_widths = c(1), heights = c(1), labels = c("f", "g"), label_size = 20)
+panel2d = cowplot::plot_grid((p8&NoLegend()),(p9&NoLegend()), ncol=2, nrow=1, rel_widths = c(1), heights = c(1), labels = c("h", "i"), hjust = -0.5, vjust = -0.5,label_size = 20)
+
+panels2 = cowplot::plot_grid(panel2a,panel2a2,panel2b,panel2c,panel2d, nrow = 5, rel_heights = c(0.5,0.5,0.9,0.5,0.5))
+```
+
+```{r fig.height=30, fig.width=18}
+panels2
+```
+
+

@@ -1,0 +1,574 @@
+---
+title: "Figure 04 - funcional signatures for mac"
+output: html_notebook
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r library packages}
+suppressPackageStartupMessages({
+  library(Seurat)
+  library(dplyr)
+  library(ggplot2)
+  library(dittoSeq)
+  library(RColorBrewer)
+  library(gridExtra)
+  library(grid)
+  library(ggpubr)
+  library(dittoSeq)
+  library(clusterProfiler)
+  library(ReactomePA)
+  library(AnnotationDbi)
+  library(EnsDb.Hsapiens.v86)
+  library(ggplotify)
+  library(caret)
+})
+```
+
+```{r}
+load("/data/05_figureVF.RData")
+```
+
+```{r}
+bar_tema = list(
+  theme(
+    plot.title = element_text(size = 0),
+    plot.subtitle = element_text(size = 0),
+    axis.text.x = element_text(
+      size = 12,
+      angle = 0,
+      hjust = 0.5,
+      color = 'black'
+    ),
+    axis.text.y = element_text(size = 12, color = 'black'),
+    axis.title.y = element_text(size = 12),
+    axis.title.x = element_text(size = 12),
+    legend.text = element_text(size = 12),
+  )
+)
+
+macro_pal = c(
+  "Mac_Alv-like" = "#8B87FE",
+  "Mac_Angio" = "#DC4A82",
+  "Mac_Hypo" = "#FFA8DE",
+  "Mac_IFN" = "#6B6AF4",
+  "Mac_LA" = "#BD26DE",
+  "Mac_Prolif" = "#CFB8D9",
+  "Mac_Rec" = "#BF8FFF",
+  "Mac_AgPres" = "#00AEEE",
+  "RTM_IM" = "#1be19f",
+  "RTM_IFN" = "#a2db71",
+  "RTM_LA" = "#4ddfc8",
+  "RTM-like_MT" = "#579C99"
+)
+
+pseudo_pal = c(
+  "Mac_Angio" = "#DC4A82",
+  "Mac_Hypo" = "#FFA8DE",
+  "Mac_IFN" = "#6B6AF4",
+  "Mac_LA" = "#BD26DE",
+  "Mac_Rec" = "#BF8FFF",
+  "Mac_AgPres" = "#00AEEE",
+  "RTM-like_MT" = "#579C99",
+  'Mono_CD14_FOS+' = "#ffaf65",
+  'Mono_CD14_FOS-' = "#ef3142",
+  'Mono_FCGR3A' = "#755c46",
+  'Mono_IL1B' = "#d35b00",
+  'MonoInter_CLEC10A' = "#b88b97",
+  'MonoInter_CXCL10' = "#b0003b",
+  'cDC2_CD14' = "#2e525e",
+  'cDC2_FCGR3A' = "#cfa8d5"
+)
+```
+
+```{r}
+create_violin_plot <- function(data, score, title) {
+  order <- reorder(data$celltype, -data@meta.data[[score]])
+  data$celltype <- factor(data$celltype, levels = levels(order))
+  p <- ggviolin(data@meta.data, x = "celltype", y = score, fill = "celltype",
+                palette = macro_pal,
+                add = "boxplot", add.params = list(fill = "white")) + 
+    stat_compare_means(label = "p.signif", method = "wilcox", ref.group = ".all.", hide.ns = FALSE, show.legend = FALSE) +
+    stat_compare_means(method = "kruskal.test", label.y = max(data@meta.data[[score]]) + 0.1, label.x = 1.5) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+    geom_hline(yintercept = mean(data@meta.data[[score]]), linetype = 2) +
+    NoLegend() +
+    ggtitle(title) +
+    ylab(paste0(title)) +
+    xlab("") + ylab("")
+  
+  return(p)
+}
+```
+
+```{r}
+data$celltype <- ifelse(data$celltype == 'Mac_Reg', 'Mac_AgPres', data$celltype)
+Idents(data) = 'celltype'
+Idents(data) = factor(Idents(data), levels = c("Mac_Alv-like", "Mac_Angio", "Mac_Hypo", "Mac_IFN", "RTM_IFN", "Mac_LA", "RTM_LA", "Mac_Prolif", "Mac_Rec", "Mac_AgPres", "RTM_IM", "RTM-like_MT" ))
+```
+
+```{r}
+genes <- full_join(m1, m2)
+
+expr_a <- averages@assays$RNA@counts %>% as.data.frame()
+colnames(expr_a) <- ifelse(colnames(expr_a) == 'Mac_Reg', 'Mac_AgPres', colnames(expr_a))
+indx <- which(rownames(expr_a) %in% m1$gene)
+expr_a <- expr_a[indx,]
+expr_a$gene <- rownames(expr_a) 
+expr_a <- expr_a %>%
+  mutate(gene =  factor(gene, levels = m1$gene)) %>%
+  arrange(gene)
+
+exp = expr_a[ , 1:12]
+mat = as.matrix(exp)
+base_mean = rowMeans(mat)
+mat_scaled = t(apply(mat, 1, scale))
+colnames(mat_scaled)  <- colnames(mat)
+
+expr_a <- inner_join(expr_a, m1)
+
+annotation_row = data.frame(expr_a$`function`)
+annotation_row$GeneFunction <- annotation_row$expr_a..function.
+annotation_row$expr_a..function. <- NULL
+
+col <- scales::hue_pal()(7)
+
+ann_colors <- list(
+  GeneFunction = c(
+    "M1  Cytokine" = "#B3E2CD",
+    "M1 Activating cytokines" = "#FDCDAC",
+    "M1 Effector molecules" = "#CBD5E8",
+    "M1 Metabolism" = "#F4CAE4",
+    "M1 Surface Protein" = "#E6F5C9",
+    "M1 Transcription factors" = "#FFF2AE"
+  ),
+  Celltype = c("Mac_Alv-like" = "#8B87FE",
+        "Mac_Angio" = "#DC4A82",
+        "Mac_Hypo" = "#FFA8DE",
+        "Mac_IFN"= "#6B6AF4",
+        "Mac_LA" = "#BD26DE",
+        "Mac_Prolif"= "#CFB8D9",
+        "Mac_Rec" = "#BF8FFF",
+        "Mac_AgPres" = "#00AEEE",
+        "RTM_IM"= "#1be19f",
+        "RTM_IFN" = "#a2db71",
+        "RTM_LA"= "#4ddfc8", 
+        "RTM-like_MT"= "#579C99")
+)
+
+annotation_col <- list()
+
+levels = c("Mac_Alv-like",
+        "Mac_Angio",
+        "Mac_Hypo",
+        "Mac_IFN",
+        "Mac_LA",
+        "Mac_Prolif",
+        "Mac_Rec",
+        "Mac_AgPres",
+        "RTM_IM",
+        "RTM_IFN",
+        "RTM_LA", 
+        "RTM-like_MT" )
+m1_levels <- data.frame(Celltype = factor(colnames(mat_scaled), levels = levels))
+
+
+m1_levels <- m1_levels %>%
+  mutate(Celltype =  factor(colnames(mat_scaled), levels = levels)) %>%
+  arrange(Celltype)    
+
+mat_scaled <- mat_scaled[, levels]
+
+p1 = ComplexHeatmap::pheatmap(t(mat_scaled), name = 'z_score', annotation_row = m1_levels, annotation_colors = ann_colors, annotation_col = annotation_row, cluster_rows = FALSE, cluster_cols = FALSE, gaps_col = c(3, 12, 22, 25,26),scale = 'col', color = colorRampPalette(c("navy", "white", "firebrick3"))(50), show_colnames =  T, show_rownames = F) %>% ggplotify::as.ggplot()
+```
+
+```{r}
+expr_a <- averages@assays$RNA@counts %>% as.data.frame()
+colnames(expr_a) <- ifelse(colnames(expr_a) == 'Mac_Reg', 'Mac_AgPres', colnames(expr_a))
+indx <- which(rownames(expr_a) %in% m2$gene)
+expr_a <- expr_a[indx,]
+expr_a$gene <- rownames(expr_a) 
+expr_a <- expr_a %>%
+  mutate(gene =  factor(gene, levels = m2$gene)) %>%
+  arrange(gene)
+
+exp = expr_a[ , 1:12]
+mat = as.matrix(exp)
+
+base_mean = rowMeans(mat)
+mat_scaled = t(apply(mat, 1, scale))
+colnames(mat_scaled)  <- colnames(mat)
+
+expr_a <- inner_join(expr_a, m2)
+
+annotation_row = data.frame(expr_a$`function`)
+annotation_row$GeneFunction <- annotation_row$expr_a..function.
+annotation_row$expr_a..function. <- NULL
+
+col <- scales::hue_pal()(9)
+
+ann_colors <- list(
+  GeneFunction = c(
+    "M2 Cytokine" = "#FBB4AE",
+    "M2 Activating cytokines" = "#B3CDE3",
+    "M2 Effector molecules" = "#CCEBC5",
+    "M2 Metabolism" = "#DECBE4",
+    "M2 Surface Protein" = "#FED9A6",
+    "M2 Transcription factors" = "#FFFFCC",
+    "Hydrolase" = "#E5D8BD",
+    "RTK subfamily" = "#FDDAEC"),
+    Celltype = c("Mac_Alv-like" = "#8B87FE",
+        "Mac_Angio" = "#DC4A82",
+        "Mac_Hypo" = "#FFA8DE",
+        "Mac_IFN"= "#6B6AF4",
+        "Mac_LA" = "#BD26DE",
+        "Mac_Prolif"= "#CFB8D9",
+        "Mac_Rec" = "#BF8FFF",
+        "Mac_AgPres" = "#00AEEE",
+        "RTM_IM"= "#1be19f",
+        "RTM_IFN" = "#a2db71",
+        "RTM_LA"= "#4ddfc8", 
+        "RTM-like_MT"= "#579C99")
+)
+
+m2_levels <- m1_levels %>%
+  mutate(Celltype =  factor(colnames(mat_scaled), levels = c("Mac_Alv-like",
+        "Mac_Angio",
+        "Mac_Hypo",
+        "Mac_IFN",
+        "Mac_LA",
+        "Mac_Prolif",
+        "Mac_Rec",
+        "Mac_AgPres",
+        "RTM_IM",
+        "RTM_IFN",
+        "RTM_LA", 
+        "RTM-like_MT"))) %>%
+  arrange(Celltype)    
+
+mat_scaled <- mat_scaled[, c("Mac_Alv-like",
+        "Mac_Angio",
+        "Mac_Hypo",
+        "Mac_IFN",
+        "Mac_LA",
+        "Mac_Prolif",
+        "Mac_Rec",
+        "Mac_AgPres",
+        "RTM_IM",
+        "RTM_IFN",
+        "RTM_LA", 
+        "RTM-like_MT")]
+
+
+p2 = ComplexHeatmap::pheatmap(t(mat_scaled), name = 'z_score', annotation_row = m2_levels, annotation_colors = ann_colors, annotation_col = annotation_row, cluster_rows = FALSE, cluster_cols = FALSE, gaps_col = c(2, 8, 21, 23,44,48, 49),scale = 'row', color = colorRampPalette(c("navy", "white", "firebrick3"))(50), show_rownames = F, show_colnames = T) %>% ggplotify::as.ggplot()
+```
+
+
+Biological Functions
+
+```{r}
+`%nin%` = Negate(`%in%`)
+
+angio = c("APP","CCND2","CXCL6", "ITGAV","JAG1", "OLR1","PTK2","SLCO2A1","SPP1","THBD","TIMP1", "VAV2","VCAN","VEGFA")
+
+hypo = hypoxia$`hypoxia[-1, ]`
+
+emt = c("ABI3BP","ACTA2","ADAM12", "BGN","BMP1","CADM1","CALD1","CAP2",
+  "CCN1","CCN2","CDH11","CDH2","CDH6", "COMP",   
+  "CTHRC1","CXCL1","CXCL12","CXCL8","DAB2","DCN","DKK1","DPYSL3","DST","ECM2",
+  "EFEMP2","ELN","FAP","FBLN1","FBLN2","FBLN","FBN1","FBN2","FERMT2","FGF2",
+  "FMOD","FSTL1","FSTL3","FUCA1","FZD8","GADD4A","GADD4B","GAS1","GEM","GJA1","GLIPR1","GPC1",
+  "HTRA1","ID2","IGFBP3","IGFBP4","ITGAV",
+  "JUN","LAMA2","LAMA3","LAMC2","LOX","LOXL1","LOXL2","LRP1",
+  "LRRC1","LUM","MAGEE1","MATN2","MATN3","MCM7","MEST","MFAP","MGP","MMP14","MMP2","MMP3","MSX1","MXRA",
+  "MYL9","MYLK","NID2","NNMT","NTM","P3H1","PCOLCE","PDGFRB","PFN2",
+  "PMEPA1","POSTN","PRRX1","PRSS2","PTHLH",
+  "RGS4","RHOB","SAT1","SERPINE2","SFRP1","SFRP4","SGCB","SGCD",
+  "SGCG","SLIT2","SLIT3","SNAI2","SPARC","SPOCK1","TAGLN","TFPI2","TGFB1",
+  "TGFBR3","THBS2","THY1","TIMP3","TNC","TNFAIP3","TPM1","TPM2",
+  "VCAM1","VEGFA","VEGFC","WIPF1")
+  
+  
+ecm2_filtered = c("CLEC12A", "CLEC7A", "SEMA6B", "SEMA4C", "COLEC12", "MUC4", "C1QTNF4", "CD209", "FCN1", "MUCL1", "LGALS2", "CLEC4E", "CLEC4A", "SEMA4D", "C1QA", "CLEC2B", "CLEC1A", 'C1QC', 'CLEC10A', 'SEMA4A', 'C1QB')
+ecm2 = subset(ecm, subset = GeneSymbol %nin% ecm2_filtered)
+
+antigen = c("ACTR1A", "ACTR1B", "AP1B1", "AP1M2", "AP2B1", "AP2M1", "CAPZB", "CD74", "CTSF", "CTSH", "CTSO", "DCTN2", "DNM3", "DYNC1I1",
+       "DYNC1I2", "DYNC1LI1", "HLA-DMA",  "HLA-DMB",  "HLA-DOA", "HLA-DOB", "HLA-DPA1", "HLA-DPB1", "HLA-DQA1", "HLA-DQA2", "HLA-DQB1",
+       "HLA-DQB2", "HLA-DRA",  "HLA-DRB1", "HLA-DRB3", "HLA-DRB4", "HLA-DRB5", "KIF26A", "KIF2A", "KIF3B", "KIF3C", "KIF4B", "KIF5B",
+       "KIFAP3", "KLC1", "KLC4", "SAR1B", "SEC13", "SPTBN2", "TUBA1A", "TUBA1B", "TUBA3C", "TUBA3D", "TUBA4A", "TUBA4B", "TUBA8",
+       "TUBB2A", "TUBB2B", "TUBB3", "TUBB4A", "TUBB4B", "TUBB8", "TUBB8B")
+
+phago = c("AKT3","PLA2G4B","DNM1L","WASF2","VAV3", "ARPC1A","CFL2","WASF3","PLA2G4E","CRK","CRKL","DNM1","DNM2","DOCK2", "PIKFYVE",
+          "AKT1","AKT2","FCGR1A", "FCGR2A","FCGR2B","FCGR3A","PIP5K1C","PIK3R5", "DNM3","AMPH","PLA2G4D","HCK","INPP5D","LIMK2",
+          "LYN","MARCKS","MYO10","PAK1","ASAP1","PIK3CA","PIK3CB","PIK3CD","PIK3CG","PIK3R1", "PIK3R2","PLA2G4A","PLCG1", 
+          "PLCG2","PLD1","PLD2","PRKCA","PRKCG","MAPK1","MAPK3","SPHK2","PTPRC","RAC1","RAF1", "RPS6KB1","NCF1","SYK", "VAV1",
+          "VAV2","WAS", "PIP5K1A","PIP5K1B","PIP4K2B","PLA2G6","PIK3R3","SCIN","PLPP1","ASAP2","WASL","FCGR2C","GAB2")
+```
+
+```{r}
+# data <- UCell::AddModuleScore_UCell(data, features = list(angio), name = "Angiogenesis-score")
+# data <- UCell::AddModuleScore_UCell(data, features = list(hypoxia$`hypoxia[-1, ]`), name = "Hypoxia-score")
+# data <- UCell::AddModuleScore_UCell(data, features = list(emt), name = "EMT-score")
+# data <- UCell::AddModuleScore_UCell(data, features = list(ecm2$GeneSymbol), name = "ECMMac-score")
+# data <- UCell::AddModuleScore_UCell(data, features = list(antigen), name = "AntigenPresentation-score")
+# data <- UCell::AddModuleScore_UCell(data, features = list(phago), name = "Phagocytosis-score")
+```
+
+```{r}
+p3 <- create_violin_plot(data, score = "signature_1Angiogenesis.score", title = "Angiogenesis Score")
+p4 <- create_violin_plot(data = data, score = "signature_1Hypoxia.score", title = "Hypoxia Score")
+p5 <- create_violin_plot(data = data, score = "signature_1EMT.score", title = "Epthelial Mesenchymal Transition Score")
+p6 <- create_violin_plot(data = data, score = "signature_1ECMMac.score", title = "Extracellular Matrix Signature in Mac Score")
+p7 <- create_violin_plot(data = data, score = "signature_1AntigenPresentation.score", title = "Antigen Presentation Score")
+p8 <- create_violin_plot(data = data, score = "signature_1Phagocytosis.score", title = "FcγR Mediated Phagocytosis Score")
+```
+
+```{r}
+gene = c('PDCD1', 'CD274', 'PDCD1LG2', 'TREM1', 'TREM2', 'FOLR2')
+expr_a <- averages@assays$RNA@counts %>% as.data.frame()
+colnames(expr_a) <- ifelse(colnames(expr_a) == 'Mac_Reg', 'Mac_AgPres', colnames(expr_a))
+indx <- which(rownames(expr_a) %in% gene)
+expr_a <- expr_a[indx,]
+expr_a$gene <- rownames(expr_a) 
+expr_a <- expr_a %>%
+  mutate(gene =  factor(gene, levels = c('PDCD1', 'CD274', 'PDCD1LG2', 'TREM1', 'TREM2', 'FOLR2'))) %>%
+  arrange(gene)
+
+exp = expr_a[ , 1:12]
+mat = as.matrix(exp)
+base_mean = rowMeans(mat)
+mat_scaled = t(apply(mat, 1, scale))
+colnames(mat_scaled)  <- colnames(mat)
+
+gene = gene %>% as.data.frame()
+gene$gene = gene$.
+gene$. = NULL
+expr_a <- inner_join(expr_a, gene)
+
+celltypes <- c("Mac_Alv-like", "Mac_Angio", "Mac_Hypo", "Mac_IFN", "Mac_LA", "Mac_Prolif", "Mac_Rec", "Mac_AgPres", "RTM_IM", "RTM_IFN", "RTM_LA", "RTM-like_MT")
+
+ann_colors <- list(Celltype = c(
+  "Mac_Alv-like" = "#8B87FE",
+  "Mac_Angio" = "#DC4A82",
+  "Mac_Hypo" = "#FFA8DE",
+  "Mac_IFN"= "#6B6AF4",
+  "Mac_LA" = "#BD26DE",
+  "Mac_Prolif"= "#CFB8D9",
+  "Mac_Rec" = "#BF8FFF",
+  "Mac_AgPres" = "#00AEEE",
+  "RTM_IM"= "#1be19f",
+  "RTM_IFN" = "#a2db71",
+  "RTM_LA"= "#4ddfc8", 
+  "RTM-like_MT"= "#579C99"))
+
+m1_levels <- data.frame(Celltype = factor(colnames(mat_scaled), levels = celltypes))
+
+m1_levels <- m1_levels %>%
+  mutate(Celltype = factor(colnames(mat_scaled), levels = celltypes)) %>%
+  arrange(Celltype)    
+
+mat_scaled <- mat_scaled[, celltypes]
+
+breaksList = seq(-1.5, 1.5, by = 0.5)
+
+HP_mac = ComplexHeatmap::pheatmap(
+  mat_scaled,
+  name = 'z-score',
+  annotation_col = m1_levels,
+  annotation_colors = ann_colors,
+  cluster_rows = F,
+  show_colnames = F,
+  breaks = breaksList,
+  cluster_cols = FALSE,
+  color = colorRampPalette(c("navy", "white", "firebrick3"))(50) 
+)%>% ggplotify::as.ggplot()
+```
+
+#pseudotime
+
+```{r}
+p9 = plot_cells(
+  pseudo_cds,
+  rasterize = T,
+  alpha = 0.5,
+  color_cells_by = 'pseudotime',
+  label_groups_by_cluster = T,
+  label_cell_groups = T,
+  label_branch_points = FALSE,
+  label_roots = FALSE,
+  label_leaves = FALSE,
+) + NoAxes()
+p9 = ggrastr::rasterize(p9)
+```
+
+```{r}
+pseudo_metadata = colData(pseudo_cds)
+pseudo_cds@colData$celltype = pseudo_cds@colData$celltype %>% as.character()
+pseudo_cds@colData$celltype <- ifelse(pseudo_cds@colData$celltype == 'Mac_Reg', 'Mac_AgPres', pseudo_cds@colData$celltype)
+
+p10 =plot_cells(
+  pseudo_cds,
+  color_cells_by = 'celltype',
+  alpha = 0.1,
+  label_groups_by_cluster = T,
+  label_branch_points = FALSE,
+  label_roots = FALSE,
+  label_leaves = FALSE,
+  label_cell_groups = T,
+  trajectory_graph_segment_size = 1.5,
+  group_label_size =  5, rasterize = T 
+) + NoAxes() + scale_color_manual(values = pseudo_pal)
+p10 = ggrastr::rasterize(p10)
+```
+
+```{r}
+pseudo_cds$monocle3_pseudotime <- pseudotime(pseudo_cds)
+data.pseudo <- as.data.frame(colData(pseudo_cds))
+data.pseudo$celltype <- ifelse(data.pseudo$celltype == 'Mac_Reg', 'Mac_AgPres', data.pseudo$celltype)
+
+p11 = ggplot(data.pseudo,
+            aes(
+              monocle3_pseudotime,
+              reorder(celltype, monocle3_pseudotime, median),
+              fill = celltype
+            )) +
+  geom_boxplot(outlier.colour = 'black') + scale_fill_manual(values = pseudo_pal) + theme_classic() + ylab("") + xlab("Pseudotime") + coord_flip() + theme(axis.text = element_text(colour = 'black'), axis.text.x = element_text(angle = 45, hjust = 1)) & NoLegend()
+```
+
+```{r}
+genes <-
+  row.names(subset(modulated_genes, q_value == 0 & morans_I > 0.25))
+
+pt.matrix1 <-
+  as.matrix(exprs(pseudo_cds)[match(genes, rownames(rowData(pseudo_cds))), order(pseudotime(pseudo_cds))])
+pt.matrix <-
+  t(apply(pt.matrix1, 1, function(x) {
+    smooth.spline(x, df = 3)$y
+  }))
+pt.matrix <- t(apply(pt.matrix, 1, function(x) {
+  (x - mean(x)) / sd(x)
+}))
+rownames(pt.matrix) <- genes
+ensembl <-
+  mapIds(
+    keys = row.names(pt.matrix),
+    EnsDb.Hsapiens.v86,
+    column = "SYMBOL",
+    keytype = "GENEID",
+    multiVals = "first"
+  )
+gene_id <- as.data.frame(ensembl)
+rownames(pt.matrix) <- gene_id$ensembl
+
+colnames(pt.matrix) <- colnames(pt.matrix1) #nao perder colnames
+
+pseudotime <- pseudotime(pseudo_cds) %>% as.data.frame() #pseudotime
+pseudotime$cell <- rownames(pseudotime)
+
+celltype <- pseudo_cds@clusters$UMAP %>% as.data.frame() #celltype
+celltype$cell <- rownames(celltype) %>% as.character()
+celltype$cell <- ifelse(celltype$cell == 'Mac_Reg', 'Mac_AgPres', celltype$cell)
+
+merge <-
+  merge(pseudotime, celltype, by = 'cell') #pseudotime column '.', celltype columns clusters
+merge <- merge[order(merge$.), ]
+merge$clusters  = merge$clusters %>% as.character(
+  
+)
+merge$clusters <- ifelse(merge$clusters == 'Mac_Reg', 'Mac_AgPres', merge$clusters)
+
+colnames(pt.matrix) <- merge$clusters #set colnames to clusters
+
+ann_colors <- list(
+  Celltype = c(
+    "Mac_Alv-like" = "#8B87FE",
+    "Mac_Angio" = "#DC4A82",
+    "Mac_Hypo" = "#FFA8DE",
+    "Mac_IFN" = "#6B6AF4",
+    "Mac_LA" = "#BD26DE",
+    "Mac_Rec" = "#BF8FFF",
+    "Mac_AgPres" = "#00AEEE",
+    "RTM-like_MT" = "#579C99",
+    'Mono_CD14_FOS+' = "#ffaf65",
+    'Mono_CD14_FOS-' = "#ef3142",
+    'Mono_CD16' = "#755c46",
+    'Mono_IL1B' = "#d35b00",
+    'MonoInter_FOS+' = "#b88b97",
+    'MonoInter_FOS-' = "#b0003b",
+    'cDC2_CD14' = "#2e525e",
+    'cDC2_FCGR3A' = "#cfa8d5"
+  )
+)
+
+levels2 <-
+  data.frame(Celltype = factor(colnames(pt.matrix), levels = c(
+  'Mono_CD14_FOS+',
+  'Mono_CD14_FOS-',
+  'Mono_FCGR3A',
+  'Mono_IL1B',
+  'MonoInter_CLEC10A',
+  'MonoInter_CXCL10',
+  "Mac_Angio",
+  "Mac_Hypo",
+  "Mac_IFN",
+  "Mac_LA",
+  "Mac_Rec",
+  "Mac_AgPres",
+  "RTM-like_MT",
+  'cDC2_CD14',
+  'cDC2_FCGR3A'
+)))
+
+ha = HeatmapAnnotation(
+  Celltype = colnames(pt.matrix),
+  Pseudotime = anno_barplot(merge$., gp = gpar(fill = 1:8616, col = '#912568')),
+  col = list(Celltype = pseudo_pal)
+)
+
+ha2 = rowAnnotation(foo = anno_mark(at = c(1:9), labels = gene_id[1:9, 1]))
+
+p12 <- Heatmap(
+  pt.matrix,
+  name = "z-score",
+  col = colorRamp2(seq(
+    from = -2, to = 2, length = 11
+  ), viridis::plasma(n = 11)),
+  show_row_names = TRUE,
+  top_annotation = ha,
+  show_column_names = FALSE,
+  row_names_gp = gpar(fontsize = 10),
+  row_dend_reorder = TRUE,
+  clustering_method_rows = "ward.D2",
+  clustering_method_columns = "ward.D2",
+  row_title_rot = 0,
+  cluster_rows = TRUE,
+  cluster_row_slices = FALSE, use_raster = T,
+  cluster_columns = FALSE, raster_by_magick = T, raster_quality = 2
+) %>% ggplotify::as.ggplot()
+
+```
+
+
+```{r fig.height=18, fig.width=15}
+panel4AB = cowplot::plot_grid(p1,p2, ncol=1, nrow=2, rel_widths = c(1,1), heights = c(0.5), labels = c("a", "b"), hjust = -0.1, vjust=1, label_size = 20)
+panel4CD = cowplot::plot_grid(p3,p4, ncol=1, nrow=2, heights = c(1), labels = c("c", "d"), label_size = 20)
+
+panel4ABCD = cowplot::plot_grid(panel4AB, panel4CD, ncol=2, nrow=1, rel_widths = c(0.7,0.3))
+
+panel4EFGH = cowplot::plot_grid(p5, p6,p7,p8, ncol=2, nrow=2, heights = c(1), labels = c("e", "f", "g", "h"), label_size = 20)
+
+panel4I = cowplot::plot_grid(HP_mac, ncol=1, nrow=1, labels = c("i"), label_size = 20)
+
+panel4EFGHI = cowplot::plot_grid(panel4EFGH, panel4I, ncol=2, nrow=1,  rel_widths =  c(0.6,0.4))
+
+panel4JKL = cowplot::plot_grid(p9,p10,p11, ncol=1, nrow = 3, rel_heights = c(1,1,1), labels = c("j", "k", "l"), label_size = 20)
+panel4M = cowplot::plot_grid(p12, ncol=1, nrow = 1 ,labels = "m", label_size = 20)
+panel4JKLM = cowplot::plot_grid(panel4JKL ,panel4M, ncol=2, rel_widths =  c(0.75,1))
+
+
+panel_4 = cowplot::plot_grid(panel4ABCD,panel4EFGHI,panel4JKLM, nrow=3, rel_heights = c(0.3,0.3,0.4))
+```
+
+```{r fig.height=27, fig.width=17}
+panel_4
+```

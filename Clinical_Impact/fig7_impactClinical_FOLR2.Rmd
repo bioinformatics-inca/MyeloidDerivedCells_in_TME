@@ -1,0 +1,711 @@
+---
+title: "Panel1_impactClinical_FOLR2"
+author: "Cristiane"
+date: "2023-03-24"
+output: html_document
+---
+
+```{r}
+.libPaths("~/macrophages_sc/lib/Rpackages/4.2/")
+library(ggplot2)
+library(TCGAbiolinks)
+library(dplyr)
+library(tibble)
+library(survival)
+library(survminer)
+library(readr)
+library(readxl)
+library(BayesPrism)
+library(lubridate)
+library(patchwork)
+library(cowplot)
+library(Seurat)
+```
+
+```{r}
+theme_manuscript <- function(base_size=10, base_family="arial") {
+  library(grid)
+  (ggthemes::theme_foundation(base_size=base_size)
+    + theme(plot.title = element_text(hjust = 0.5,size = base_size),
+            panel.background = element_rect(colour = NA),
+            plot.background = element_rect(colour = NA),
+            panel.border = element_rect(colour = NA),
+            axis.title.y = element_text(angle=90,vjust =2,size = base_size),
+            axis.title.x = element_text(vjust = -0.2,size = base_size),
+            axis.text = element_text(size = base_size), 
+            axis.line = element_line(colour="black"),
+            axis.ticks = element_line(),
+            panel.grid.major = element_line(colour="#f0f0f0"),
+            panel.grid.minor = element_blank(),
+            legend.key = element_rect(colour = NA),
+            legend.position = "bottom",
+            legend.direction = "horizontal",
+            legend.key.size= unit(0.5, "cm"),
+            legend.spacing = unit(0, "cm"),
+            strip.background=element_rect(colour="#f0f0f0",fill="#f0f0f0"),
+            strip.text = element_text(size=base_size)
+    ))
+}
+
+```
+
+```{r}
+#Setting pathways
+setwd("~/Path/")
+
+load("data_fig7.RData")
+data_seurat=readRDS("~/data_seurat.rds")
+
+```
+
+
+```{r setup, include=FALSE}
+
+
+df <- reshape2::melt(results_univ, id="celltype")
+
+df$value <- as.numeric(df$value)
+
+df$variable <- as.character(df$variable)
+df$variable <- ifelse(df$variable == "BRCA_Basal", "BRCA_TNBC", df$variable)
+df$celltype[which(df$celltype %in% c("Mono_CD16"))] <-"Mono_FCG3RA"
+df$celltype[which(df$celltype %in% c("MonoInter_FOSneg"))] <- "MonoInter_CXCL10"
+df$celltype[which(df$celltype %in% c("Mac_Reg"))] <- "Mac_AgPres"
+
+df$celltype = factor(df$celltype, levels = c("B_cells","cDC1_CLEC9A","cDC2_CD14","cDC2_CD207","cDC2_CXCL8","cDC2_FCGR3A","cDC2B_FCER1A","pDC",
+                                             "Mac_Angio","Mac_IFN","Mac_AgPres","RTM_IM","RTM_LA", "RTM_IFN","TCD4_em","TCD4_ex","TCD4_naive","TCD4_reg" ,"TCD8_em","TCD8_ex",
+                                             "TCD8_naive","NK_cyto",
+                                             "NK_rest","NKT","Neutrophil_CXCL8" ,"Neutrophil_MMP9", "Mono_FCG3RA","Mono_IL1B","MonoInter_CXCL10","Mast_cells",
+                                             "Endothelial","Fibroblasts","Epithelial Cells","Malignant Cells", "Age","age_at_initial_pathologic_diagnosis","Stage"))
+
+```
+
+```{r fig.height=3, fig.width=6}
+
+df=df[which(df$celltype %in% c("Mac_AgPres","RTM_LA", "RTM_IFN", "Mac_IFN", "Mac_Angio","RTM_IM")),]
+
+df$celltype = factor(df$celltype, levels = c("Mac_AgPres","RTM_LA", "RTM_IFN", "Mac_IFN", "Mac_Angio","RTM_IM"))
+
+p1=ggplot(df, aes(x = variable, y = celltype, fill = value)) + geom_tile(color = "black") + geom_tile(color = "white", lwd = 1.5, linetype = 1) + scale_fill_gradient2(low = "#7CAE89", mid = "#FFFFFF", high = "#7D3750", midpoint = 1, na.value = "white") + theme_manuscript()  + 
+  guides(fill = guide_colourbar(title = "Hazard Ratio-OS")) + ggtitle("") + theme(axis.text.y = element_text(hjust = 1, size = 9.5), axis.title.x = element_text(size = 9.5)) + theme(axis.text.x=element_text(angle =90, size = 9.5), legend.title = element_text(size = 8, angle = 0), legend.position = "bottom", legend.direction = "horizontal") + labs(x="Tumor Type", y="") +coord_flip()
+
+p1+labs(tag = 'A') + theme(plot.tag = element_text(face = "bold", size=16))
+```
+
+
+```{r fig.height=2, fig.width=8}
+umap_folr2_pd1 <- readRDS("~/lbbc_members/share/TME_nebulosa/umap_folr2_pd1.RDS")
+umap_folr2_pd1 
+```
+
+```{r}
+folr2 <- subset(data_seurat, idents = "RTM_IM")
+Idents(folr2) <- "harm_sample.type"
+avg.folr2 <- log1p(AverageExpression(folr2, verbose = FALSE)$RNA) %>% as.data.frame()
+avg.folr2$gene <- rownames(avg.folr2)
+
+
+deg = FindAllMarkers(folr2,  only.pos = F)
+top10_deg = top_n(deg, n = -100, wt = avg_log2FC)
+deg %>% group_by(cluster) %>% top_n(n = 100, wt = avg_log2FC)
+```
+
+
+```{r}
+data_folr2 = as.data.frame(t(folr2@assays$RNA@data))
+data_folr2$sample <- folr2$harm_sample.type
+
+pal=c('tumor' = '#E92663','normal' = '#fcbbd1')
+
+a=ggviolin(data_folr2, x = "sample", y = "CCL22", fill = "sample",
+                palette = pal,
+                add = "boxplot", add.params = list(fill = "white")) + 
+    stat_compare_means(label = "p.signif", method = "wilcox", hide.ns = FALSE, show.legend = FALSE) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) + xlab("")+
+    NoLegend() +
+    ggtitle("") 
+
+b=ggviolin(data_folr2, x = "sample", y = "CD36", fill = "sample",
+         palette = pal,
+         add = "boxplot", add.params = list(fill = "white")) + 
+  stat_compare_means(label = "p.signif", method = "wilcox", hide.ns = FALSE, show.legend = FALSE) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + xlab("")+
+  NoLegend() +
+  ggtitle("") 
+
+c=ggviolin(data_folr2, x = "sample", y = "FN1", fill = "sample",
+           palette = pal,
+           add = "boxplot", add.params = list(fill = "white")) + 
+  stat_compare_means(label = "p.signif", method = "wilcox", hide.ns = FALSE, show.legend = FALSE) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + xlab("")+
+  NoLegend() +
+  ggtitle("") 
+
+d= ggviolin(data_folr2, x = "sample", y = "HIF1A", fill = "sample",
+            palette = pal,
+            add = "boxplot", add.params = list(fill = "white")) + 
+  stat_compare_means(label = "p.signif", method = "wilcox", hide.ns = FALSE, show.legend = FALSE) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + xlab("")+
+  NoLegend() +
+  ggtitle("") 
+
+e= ggviolin(data_folr2, x = "sample", y = "ICAM1", fill = "sample",
+            palette = pal,
+            add = "boxplot", add.params = list(fill = "white")) + 
+  stat_compare_means(label = "p.signif", method = "wilcox", hide.ns = FALSE, show.legend = FALSE) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + xlab("")+
+  NoLegend() +
+  ggtitle("") 
+
+
+f=ggviolin(data_folr2, x = "sample", y = "IL1B", fill = "sample",
+         palette = pal,
+         add = "boxplot", add.params = list(fill = "white")) + 
+  stat_compare_means(label = "p.signif", method = "wilcox", hide.ns = FALSE, show.legend = FALSE) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + xlab("")+
+  NoLegend() +
+  ggtitle("") 
+
+g= ggviolin(data_folr2, x = "sample", y = "ITGB1", fill = "sample",
+            palette = pal,
+            add = "boxplot", add.params = list(fill = "white")) + 
+  stat_compare_means(label = "p.signif", method = "wilcox", hide.ns = FALSE, show.legend = FALSE) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + xlab("")+
+  NoLegend() +
+  ggtitle("") 
+
+h=ggviolin(data_folr2, x = "sample", y = "PTGS2", fill = "sample",
+         palette = pal,
+         add = "boxplot", add.params = list(fill = "white")) + 
+  stat_compare_means(label = "p.signif", method = "wilcox", hide.ns = FALSE, show.legend = FALSE) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + xlab("")+
+  NoLegend() +
+  ggtitle("")
+
+i=ggviolin(data_folr2, x = "sample", y = "SOCS3", fill = "sample",
+           palette = pal,
+           add = "boxplot", add.params = list(fill = "white")) + 
+  stat_compare_means(label = "p.signif", method = "wilcox", hide.ns = FALSE, show.legend = FALSE) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + xlab("")+
+  NoLegend() +
+  ggtitle("") 
+
+j=ggviolin(data_folr2, x = "sample", y = "STAT1", fill = "sample",
+           palette = pal,
+           add = "boxplot", add.params = list(fill = "white")) + 
+  stat_compare_means(label = "p.signif", method = "wilcox", hide.ns = FALSE, show.legend = FALSE) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + xlab("")+
+  NoLegend() +
+  ggtitle("") 
+
+k=ggviolin(data_folr2, x = "sample", y = "TGFB1", fill = "sample",
+           palette = pal,
+           add = "boxplot", add.params = list(fill = "white")) + 
+  stat_compare_means(label = "p.signif", method = "wilcox", hide.ns = FALSE, show.legend = FALSE) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + xlab("")+
+  NoLegend() +
+  ggtitle("") 
+
+l=ggviolin(data_folr2, x = "sample", y = "TNF", fill = "sample",
+           palette = pal,
+           add = "boxplot", add.params = list(fill = "white")) + 
+  stat_compare_means(label = "p.signif", method = "wilcox", hide.ns = FALSE, show.legend = FALSE) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + xlab("")+
+  NoLegend() +
+  ggtitle("") 
+
+m=ggviolin(data_folr2, x = "sample", y = "VEGFA", fill = "sample",
+           palette = pal,
+           add = "boxplot", add.params = list(fill = "white")) + 
+  stat_compare_means(label = "p.signif", method = "wilcox", hide.ns = FALSE, show.legend = FALSE) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + xlab("")+
+  NoLegend() +
+  ggtitle("") 
+
+
+p10=cowplot::plot_grid(b,c,d,e,f,g,h,i,j,k,l,m, ncol=6, nrow=2, label_size = 20)
+p10
+
+```
+```{r fig.height=6, fig.width=6}
+library(EnhancedVolcano)
+p3=EnhancedVolcano(deg,
+                lab = rownames(deg),drawConnectors = TRUE, boxedLabels = TRUE,title="RTM_IM", subtitle = 'Tumor vs Normal',
+                x = 'avg_log2FC',selectLab = c("CCL2", 'CD36','FN1', 'HIF1A','ICAM1', 'IL1B','ITGB1','PTGS2', "SOCS3", 'STAT1', 'TGFB1', 'TNF', 'VEGFA'), y = 'p_val', pointSize = 1.0, titleLabSize = 8, subtitleLabSize = 8, legendLabSize = 8, labSize =3, axisLabSize = 10, caption = "", legendPosition = 'top', legendLabels = c("NS", "", "P-value < 0.05", "logFC 0.25"))
+
+p3
+
+```
+
+```{r fig.height=2, fig.width=20}
+p1.2=p1+labs(tag = 'A') + theme(plot.tag = element_text(face = "bold", size=16))+umap_folr2_pd1
+p1.2
+```
+
+
+
+########## FOLR2+ signature - RTM_IM 
+
+```{r}
+#### Basal ####
+
+Basal=TCGA_BRCA[TCGA_BRCA$BRCA_Subtype_PAM50 == "Basal",]
+
+# 1. Determine the optimal cutpoint of variables
+res.cut <- surv_cutpoint(Basal, time = "OS.time5", event = "OS.status5",
+                         variables ="RTM_IM")
+
+summary(res.cut)
+#plot(res.cut, features, palette = "npg", bins = 30, xscale = "log2") 
+
+res.cat <- surv_categorize(res.cut)
+head(res.cat)
+
+Basal$RTM_IM_group = res.cat$RTM_IM
+table(Basal$RTM_IM_group)
+```
+
+```{r}
+##OS
+stats <- summary(coxph(Surv(OS.time5, OS.status5) ~ RTM_IM_group, data = Basal))
+fit <- survfit(Surv(OS.time5, OS.status5) ~ RTM_IM_group, data = Basal)
+surv_Basal_RTM_IM =ggsurvplot(fit, xlab = "Time in years",ylab = "Overall Survival Probability",palette = c("#DB7093","#20b2aa"),
+                             surv.median.line = c("hv"), cumcensor = F,  conf.int = F ,risk.table = F, pval = F,
+                             risk.table.y.text.col = T, # colour risk table text annotations.
+                             risk.table.y.text = FALSE, font.main = c(9), font.legend = c(8), font.y = c(10),font.x = c(10), font.caption = c(10),
+                             font.tickslab = c(10),legend.labs=c("RTM_IM High","RTM_IM Low"), fontsize = 3,risk.table.height = 0.3, pval.size = 3.5, censor.size = 2,
+                             font.ytickslab = c(10))
+
+surv_Basal_RTM_IM$plot = surv_Basal_RTM_IM$plot + theme(plot.title = element_text(hjust = -0.1,size = 9))
+surv_Basal_RTM_IM$table =  surv_Basal_RTM_IM$table + theme(axis.title.y = element_text(vjust =2,size = 10),
+                                                         axis.title.x = element_text(vjust = -0.2,size = 10),
+                                                         plot.title = element_text(hjust = 0,size = 10), axis.text.x = element_text(size = 10))
+
+surv_Basal_RTM_IM$plot <-surv_Basal_RTM_IM$plot + ggplot2::annotate(
+                         "text",
+                          x = 0.20, y = 0,
+                         vjust = 0, hjust = 0,
+                         label = paste("p = ",signif(stats$sctest["pvalue"], 2) ,"\nHR = ",signif(stats$coef[2],2), "\nCI.95 = ", signif(stats$conf.int[, "lower .95"],2), " ~ ", signif(stats$conf.int[,"upper .95"],2),sep = ""), size = 3)
+
+
+## PFI
+stats <- summary(coxph(Surv(PFI.time5, PFI.status5) ~ RTM_IM_group, data = Basal))
+fit <- survfit(Surv(PFI.time5, PFI.status5) ~ RTM_IM_group, data = Basal)
+surv_Basal_RTM_IM_pfi =ggsurvplot(fit, xlab = "Time in years",ylab = "Progression-Free Survival Probability",palette = c( "#DB7093","#20b2aa"), surv.median.line = c("hv"), cumcensor = F,  conf.int = F ,risk.table = F, pval = F,risk.table.y.text.col = T,  risk.table.y.text = FALSE, font.main = c(9), font.legend = c(8), font.y = c(10),font.x = c(10), font.caption = c(10), 
+                             font.tickslab = c(10),legend.labs=c("RTM_IM High","RTM_IM Low"), fontsize = 3,risk.table.height = 0.3, pval.size = 3.5, censor.size = 2,font.ytickslab = c(10))
+
+surv_Basal_RTM_IM_pfi$plot = surv_Basal_RTM_IM_pfi$plot + theme(plot.title = element_text(hjust = -0.1,size = 9))
+surv_Basal_RTM_IM_pfi$table =  surv_Basal_RTM_IM_pfi$table + theme(axis.title.y = element_text(vjust =2,size = 10),
+                                                         axis.title.x = element_text(vjust = -0.2,size = 10),
+                                                         plot.title = element_text(hjust = 0,size = 10), axis.text.x = element_text(size = 10))
+
+
+surv_Basal_RTM_IM_pfi$plot <-surv_Basal_RTM_IM_pfi$plot + ggplot2::annotate(
+                         "text",
+                          x = 0.20, y = 0,
+                         vjust = 0, hjust = 0,
+                         label = paste("p = ",signif(stats$sctest["pvalue"], 2) ,"\nHR = ",signif(stats$coef[2],2), "\nCI.95 = ", signif(stats$conf.int[, "lower .95"],2), " ~ ", signif(stats$conf.int[,"upper .95"],2),sep = ""), size = 3)
+
+```
+
+```{r fig.height=3, fig.width=6}
+p4=surv_Basal_RTM_IM$plot+ surv_Basal_RTM_IM_pfi$plot
+p4 #+ labs(tag = 'B') + theme(plot.tag = element_text(face = "bold", size=16))
+```
+
+### IHC
+
+```{r}
+TMAfinal_BRCA$OS_time_interval_years = TMAfinal_BRCA$OS_time_interval/365.25
+TMAfinal_BRCA$OS_time5= ifelse(TMAfinal_BRCA$OS_time_interval_years >= 5 , 5, TMAfinal_BRCA$OS_time_interval_years)
+TMAfinal_BRCA$OS_status5= ifelse(TMAfinal_BRCA$OS_time_interval_years>= 5, 0, TMAfinal_BRCA$yn_obito)
+
+TMAfinal_BRCA$EFS_time_interval_years <- TMAfinal_BRCA$EFS_time_interval/365.25
+## 5 years
+TMAfinal_BRCA$EFS_time5= ifelse(TMAfinal_BRCA$EFS_time_interval_years >= 5, 5, TMAfinal_BRCA$EFS_time_interval_years)
+TMAfinal_BRCA$EFS_status5= ifelse(TMAfinal_BRCA$EFS_time_interval_years >= 5, 0, TMAfinal_BRCA$EFS_status)
+```
+
+```{r}
+res.cut <- surv_cutpoint(TMAfinal_BRCA, time = "OS_time5", event = "OS_status5",
+                         variables = "Value_FOLR2")
+
+summary(res.cut)
+#plot(res.cut, feature, palette = "npg", bins = 30, xscale = "log2") 
+
+res.cat <- surv_categorize(res.cut)
+head(res.cat)
+
+TMAfinal_BRCA$FOLR2_group = res.cat$Value_FOLR2
+```
+
+```{r}
+stats= summary(coxph(Surv(OS_time5, OS_status5) ~ FOLR2_group, data = TMAfinal_BRCA))
+fit <- survfit(Surv(OS_time5, OS_status5) ~ FOLR2_group, data = TMAfinal_BRCA)
+OS_FOLR2_BRCA =ggsurvplot(fit, xlab = "Time in years", ylab = "Overall Survival Probability",
+                 surv.median.line = c("hv"), cumcensor = F,  conf.int = F ,risk.table = F, pval = F,
+                risk.table.y.text.col = T, # colour risk table text annotations.
+                 risk.table.y.text = FALSE, font.main = c(9), font.legend = c(8), font.y = c(10),font.x = c(10), font.caption = c(10), 
+                 font.tickslab = c(10), fontsize = 3,risk.table.height = 0.3, pval.size = 3.5, censor.size = 2,
+                 font.ytickslab = c(10),legend.labs=c("FOLR2 High","FOLR2 Low"),
+                 palette = c("#db7080","#207cb2")) 
+
+OS_FOLR2_BRCA$plot <-OS_FOLR2_BRCA$plot +   ggplot2::annotate(
+                         "text",
+                          x = 0.20, y = 0,
+                         vjust = 0, hjust = 0,
+                         label = paste("p = ",signif(stats$sctest["pvalue"], 2) ,"\nHR = ",signif(stats$coef[2],2), "\nCI.95 = ", signif(stats$conf.int[, "lower .95"],2), " ~ ", signif(stats$conf.int[,"upper .95"],2),sep = ""), size = 3)
+
+
+
+stats= summary(coxph(Surv(EFS_time5, EFS_status5) ~ FOLR2_group, data = TMAfinal_BRCA))
+fit <- survfit(Surv(EFS_time5, EFS_status5) ~ FOLR2_group, data = TMAfinal_BRCA)
+EFS_FOLR2_BRCA =ggsurvplot(fit, xlab = "Time in years", ylab = "Recurrence-Free Survival Probability",
+                 surv.median.line = c("hv"), cumcensor = F,  conf.int = F ,risk.table = F, pval = F,
+                 risk.table.y.text.col = T, # colour risk table text annotations.
+                 risk.table.y.text = FALSE, font.main = c(9), font.legend = c(8), font.y = c(10),font.x = c(10), font.caption = c(10), legend.labs=c("FOLR2 High","FOLR2 Low"),
+                 font.tickslab = c(10), fontsize = 3,risk.table.height = 0.3, pval.size = 3.5, censor.size = 2,
+                 font.ytickslab = c(10),
+                 palette = c("#db7080","#207cb2")) 
+
+EFS_FOLR2_BRCA$plot <-EFS_FOLR2_BRCA$plot +  ggplot2::annotate(
+                         "text",
+                          x = 0.20, y = 0,
+                         vjust = 0, hjust = 0,
+                         label = paste("p = ",signif(stats$sctest["pvalue"], 2) ,"\nHR = ",signif(stats$coef[2],2), "\nCI.95 = ", signif(stats$conf.int[, "lower .95"],2), " ~ ", signif(stats$conf.int[,"upper .95"],2),sep = ""), size = 3)
+
+```
+
+```{r fig.height=3, fig.width=6}
+# surv_TNBC=arrange_ggsurvplots(list(OS_FOLR2_BRCA, EFS_FOLR2_BRCA), print = TRUE,
+#                     ncol = 2, nrow = 1, risk.table.height = 0.4)
+
+p5=OS_FOLR2_BRCA$plot + EFS_FOLR2_BRCA$plot
+p5#+ labs(tag = "C") + theme(plot.tag = element_text(face = "bold", size=16))
+```
+
+
+#### Assoc. Frequency
+
+```{r}
+table(TMAfinal_BRCA$CD8)
+TMAfinal_BRCA$CD8[which(TMAfinal_BRCA$CD8 %in% 999)] <- NA
+TMAfinal_BRCA$CD8[which(TMAfinal_BRCA$CD8 %in% c("0", "1"))] <- "0-1"
+TMAfinal_BRCA$CD8[which(TMAfinal_BRCA$CD8 %in% c("10","20","30","40","5"))] <- ">=5"
+
+TMAfinal_BRCA$CD8 <- factor(TMAfinal_BRCA$CD8, levels = c(">=5","0-1"),
+                       labels = c("High CD8", "Low CD8"))
+
+table(TMAfinal_BRCA$PD1)
+TMAfinal_BRCA$PD1[which(TMAfinal_BRCA$PD1 %in% 999)] <- NA
+
+TMAfinal_BRCA$PD1 <- factor(TMAfinal_BRCA$PD1, levels = c("1","0"),
+                       labels = c("High PD1", "Low PD1"))
+
+table(TMAfinal_BRCA$PDL1_CPS)
+TMAfinal_BRCA$PDL1_CPS <- factor(TMAfinal_BRCA$PDL1_CPS, levels = c("1","0"),
+                            labels = c("High PDL1","Low PDL1"))
+```
+```{r}
+TMAfinal_BRCA$FOLR2_group = ifelse(TMAfinal_BRCA$FOLR2_group == "high", "High FOLR2", "Low FOLR2")
+```
+
+
+```{r}
+
+
+
+dat <- table(TMAfinal_BRCA$FOLR2_group, TMAfinal_BRCA$CD8)
+stats= fisher.test(dat)
+FOLR2_P1 <- ggplot(TMAfinal_BRCA[!is.na(TMAfinal_BRCA$FOLR2_group) & !is.na(TMAfinal_BRCA$CD8) ,],
+                                aes(x = FOLR2_group, fill = CD8)) + labs(x="",y="counts")+
+  geom_bar(position="fill") + theme_manuscript()+theme(legend.position = "bottom")+
+  scale_fill_manual(values=c('#8225BE','#2596BE', '#D4C443'))+guides(fill=guide_legend(ncol = 2, title.position = "top", title = ""))+theme(legend.position = "top", legend.text = element_text(size = 10),axis.text.x = element_text(angle = 0))+ggplot2::annotate("text",x =1, y = 1.3, label = paste("P. Fisher = ",label= round(stats$p.value, digits = 3)), size=3) + ggtitle("FOLR2+") 
+
+dat <- table(TMAfinal_BRCA$FOLR2_group, TMAfinal_BRCA$PD1)
+stats= fisher.test(dat)
+FOLR2_P2 <- ggplot(TMAfinal_BRCA[!is.na(TMAfinal_BRCA$FOLR2_group) & !is.na(TMAfinal_BRCA$PD1) ,],
+                   aes(x = FOLR2_group, fill = PD1)) + theme_manuscript()+
+  geom_bar(position="fill") +theme(legend.position = "bottom")+ labs(x="",y="counts")+  
+  scale_fill_manual(values=c('#8225BE','#2596BE', '#D4C443'))+guides(fill=guide_legend(ncol = 2,title.position = "top", title = ""))+theme(legend.position = "top", legend.text = element_text(size = 10),axis.text.x = element_text(angle = 0))+ggplot2::annotate(
+  "text",
+  x =1, y = 1.3,
+  label = paste("P. Fisher = ",label= round(stats$p.value, digits = 3)), size=3)+ ggtitle("FOLR2+")
+
+# names(TMAfinal_BRCA)[91] = "PDL1"
+# dat <- table(TMAfinal_BRCA$FOLR2_group, TMAfinal_BRCA$PDL1)
+# stats= fisher.test(dat)
+# FOLR2_P3 <- ggplot(TMAfinal_BRCA[!is.na(TMAfinal_BRCA$FOLR2_group) & !is.na(TMAfinal_BRCA$PDL1) ,],
+#                    aes(x = FOLR2_group, fill =PDL1)) + labs(x="",y="counts")+
+#   geom_bar(position="fill") +theme_manuscript()+theme(legend.position = "right")+
+#   scale_fill_manual(values=c('#8225BE','#2596BE', '#D4C443'))+guides(fill=guide_legend(ncol = 2,title.position = "top"))+theme(legend.position = "bottom", legend.text = element_text(size = 10),axis.text.x = element_text(angle = 0))+ggplot2::annotate(
+#   "text",
+#   x =1, y = 1.3,
+#   label = paste("P. Fisher = ",label= round(stats$p.value, digits = 3)), size=4)+ ggtitle("FOLR2+")
+```
+
+
+
+```{r fig.height=5, fig.width=10}
+library(gridExtra)
+p6 = FOLR2_P1+ #labs(tag="H") + theme(plot.tag = element_text(face = "bold", size=16))+
+                           FOLR2_P2
+
+p6
+                         
+```
+
+### Ovary
+
+```{r}
+head(TCGA_ovary)
+head(TMAfinal_OV)
+```
+
+
+```{r}
+# 1. Determine the optimal cutpoint of variables
+res.cut <- surv_cutpoint(TCGA_ovary, time = "OS.time", event = "OS",
+                         variables ="RTM_IM")
+
+summary(res.cut)
+#plot(res.cut, features, palette = "npg", bins = 30, xscale = "log2") 
+
+res.cat <- surv_categorize(res.cut)
+head(res.cat)
+
+TCGA_ovary$RTM_IM_group = res.cat$RTM_IM
+```
+
+```{r}
+## OS
+stats = summary(coxph(Surv(OS.time, OS) ~ RTM_IM_group, data = TCGA_ovary))
+fit <- survfit(Surv(OS.time, OS) ~ RTM_IM_group, data = TCGA_ovary)
+surv_OV_RTM_IM =ggsurvplot(fit, xlab = "Time in years",palette = c("#DB7093","#20b2aa"),ylab = "Overall Survival Probability",
+                            surv.median.line = c("hv"), cumcensor = F,  conf.int = F ,risk.table = F, pval = F,
+                             risk.table.y.text.col = T, # colour risk table text annotations.
+                            risk.table.y.text = FALSE, font.main = c(9), font.legend = c(8), font.y = c(10),font.x = c(10), font.caption = c(10), font.tickslab = c(10),legend.labs=c("RTM_IM High","RTM_IM Low"), fontsize = 3,risk.table.height = 0.3, pval.size = 3.5, censor.size = 2,font.ytickslab = c(10))
+
+surv_OV_RTM_IM$plot = surv_OV_RTM_IM$plot + theme(plot.title = element_text(hjust = -0.1,size = 9))
+surv_OV_RTM_IM$table =  surv_OV_RTM_IM$table + theme(axis.title.y = element_text(vjust =2,size = 10),
+                                                       axis.title.x = element_text(vjust = -0.2,size = 10),
+                                                       plot.title = element_text(hjust = 0,size = 10), axis.text.x = element_text(size = 10))
+
+surv_OV_RTM_IM$plot <- surv_OV_RTM_IM$plot +  ggplot2::annotate(
+                         "text",
+                          x = 0.20, y = 0,
+                         vjust = 0, hjust = 0,
+                         label = paste("p = ",signif(stats$sctest["pvalue"], 2) ,"\nHR = ",signif(stats$coef[2],2), "\nCI.95 = ", signif(stats$conf.int[, "lower .95"],2), " ~ ", signif(stats$conf.int[,"upper .95"],2),sep = ""), size = 3)
+
+
+## PFI
+stats = summary(coxph(Surv(PFI.time5, PFI.status5) ~ RTM_IM_group, data = TCGA_ovary))
+fit <- survfit(Surv(PFI.time5, PFI.status5) ~ RTM_IM_group, data = TCGA_ovary)
+surv_OV_RTM_IM_pfi =ggsurvplot(fit, xlab = "Time in years",ylab = "Progression-Free Survival Probability",palette = c( "#DB7093","#20b2aa"),surv.median.line = c("hv"), cumcensor = F,  conf.int = F ,risk.table = F, pval = F,
+                         risk.table.y.text.col = T, # colour risk table text annotations.
+                          risk.table.y.text = FALSE, font.main = c(9), font.legend = c(8), font.y = c(10),font.x = c(10), font.caption = c(10),  font.tickslab = c(10),legend.labs=c("RTM_IM High","RTM_IM Low"), fontsize = 3,risk.table.height = 0.3, pval.size = 3.5, censor.size = 2, font.ytickslab = c(10))
+
+surv_OV_RTM_IM_pfi$plot = surv_OV_RTM_IM_pfi$plot + theme(plot.title = element_text(hjust = -0.1,size = 9))
+surv_OV_RTM_IM_pfi$table =  surv_OV_RTM_IM_pfi$table + theme(axis.title.y = element_text(vjust =2,size = 10),
+                                                   axis.title.x = element_text(vjust = -0.2,size = 10),
+                                                   plot.title = element_text(hjust = 0,size = 10), axis.text.x = element_text(size = 10))
+
+surv_OV_RTM_IM_pfi$plot <- surv_OV_RTM_IM_pfi$plot +  ggplot2::annotate(
+                         "text",
+                          x = 0.20, y = 0,
+                         vjust = 0, hjust = 0,
+                         label = paste("p = ",signif(stats$sctest["pvalue"], 2) ,"\nHR = ",signif(stats$coef[2],2), "\nCI.95 = ", signif(stats$conf.int[, "lower .95"],2), " ~ ", signif(stats$conf.int[,"upper .95"],2),sep = ""), size = 3)
+
+
+
+```
+
+```{r fig.height=3, fig.width=6.2}
+# arrange_ggsurvplots(list(surv_OV_RTM_IM, surv_OV_RTM_IM_pfi), print = TRUE,
+#                     ncol = 2, nrow = 1, risk.table.height = 0.4)
+
+
+p7=surv_OV_RTM_IM$plot + surv_OV_RTM_IM_pfi$plot 
+p7#+ labs(tag="I")+ theme(plot.tag = element_text(face = "bold", size=16))
+```
+
+##IHC - HSGOC
+
+```{r}
+TMAfinal_OV$OS_time_interval_years <- TMAfinal_OV$OS_time_interval/365.25
+## 5 years
+TMAfinal_OV$OS_time5= ifelse(TMAfinal_OV$OS_time_interval_years >= 5, 5, TMAfinal_OV$OS_time_interval_years )
+TMAfinal_OV$OS_status5= ifelse(TMAfinal_OV$OS_time_interval_years >= 5, 0, TMAfinal_OV$Status)
+
+TMAfinal_OV$PFS_time_interval_years <- TMAfinal_OV$PFS_time_interval/365.25
+## 5 years
+TMAfinal_OV$PFS_time5= ifelse(TMAfinal_OV$PFS_time_interval_years >= 5, 5, TMAfinal_OV$PFS_time_interval_years )
+TMAfinal_OV$PFS_status5= ifelse(TMAfinal_OV$PFS_time_interval_years >= 5, 0, TMAfinal_OV$Status)
+```
+
+```{r}
+table(TMAfinal_OV$FOLR2_intratumoral)
+TMAfinal_OV$FOLR2_intratumoral[which(TMAfinal_OV$FOLR2_intratumoral %in% c("caiu", "fora foco", "not detected","sem TU"))] <- NA
+TMAfinal_OV$FOLR2_intratumoral[which(TMAfinal_OV$FOLR2_intratumoral %in% c("50%"))] <-NA
+table(TMAfinal_OV$FOLR2_intratumoral)
+
+TMAfinal_OV$FOLR2_intratumoral <- factor(TMAfinal_OV$FOLR2_intratumoral, levels = c(">75%","<25%"),
+             labels = c("High FOLR2", "Low FOLR2"))
+
+
+
+#Overall Survival
+stats=summary(coxph(Surv(OS_time5, OS_status5) ~ FOLR2_intratumoral, data = TMAfinal_OV))
+fit <- survfit(Surv(OS_time5, OS_status5) ~ FOLR2_intratumoral, data = TMAfinal_OV)
+OS_IHC_OV=ggsurvplot(fit, xlab = "Time in years",ylab="Overall Survival Probability",
+              surv.median.line = c("hv"), cumcensor = F,  conf.int = F ,risk.table = F, pval = F,
+              title = 'FOLR2_intratumoral', risk.table.y.text.col = T, # colour risk table text annotations.
+              risk.table.y.text = FALSE, font.main = c(9), font.legend = c(8), font.y = c(10),font.x = c(10), font.caption = c(10), 
+              font.tickslab = c(10), fontsize = 3,risk.table.height = 0.3, pval.size = 3.5, censor.size = 2,
+              font.ytickslab = c(10),
+              legend.labs =c("High FOLR2", "Low FOLR2"),
+              palette = c("#db7080","#207cb2")) 
+
+OS_IHC_OV$plot <- OS_IHC_OV$plot +   ggplot2::annotate(
+                         "text",
+                          x = 0.20, y = 0,
+                         vjust = 0, hjust = 0,
+                         label = paste("p = ",signif(stats$sctest["pvalue"], 2) ,"\nHR = ",signif(stats$coef[2],2), "\nCI.95 = ", signif(stats$conf.int[, "lower .95"],2), " ~ ", signif(stats$conf.int[,"upper .95"],2),sep = ""), size = 3)
+
+
+#Progression Free Survival
+stats=summary(coxph(Surv(PFS_time5, PFS_status5) ~ FOLR2_intratumoral, data = TMAfinal_OV))
+fit <- survfit(Surv(PFS_time5, PFS_status5) ~ FOLR2_intratumoral, data = TMAfinal_OV)
+PFS_IHC_OV=ggsurvplot(fit, xlab = "Time in years", ylab="Progression-Free Survival Probability",
+               surv.median.line = c("hv"), cumcensor = F,  conf.int = F ,risk.table = F, pval = F,
+               title = 'FOLR2_intratumoral', risk.table.y.text.col = T, # colour risk table text annotations.
+               risk.table.y.text = FALSE, font.main = c(9), font.legend = c(8), font.y = c(10),font.x = c(10), font.caption = c(10), 
+               font.tickslab = c(10), fontsize = 3,risk.table.height = 0.3, pval.size = 3.5, censor.size = 2,
+               font.ytickslab = c(10),
+               legend.labs =c("High FOLR2", "Low FOLR2"),
+               palette = c("#db7080","#207cb2")) 
+
+PFS_IHC_OV$plot <- PFS_IHC_OV$plot +  ggplot2::annotate(
+                         "text",
+                          x = 0.20, y = 0,
+                         vjust = 0, hjust = 0,
+                         label = paste("p = ",signif(stats$sctest["pvalue"], 2) ,"\nHR = ",signif(stats$coef[2],2), "\nCI.95 = ", signif(stats$conf.int[, "lower .95"],2), " ~ ", signif(stats$conf.int[,"upper .95"],2),sep = ""), size = 3)
+
+
+```
+
+
+
+```{r fig.height=3, fig.width=6.8}
+# arrange_ggsurvplots(list(OS_IHC_OV,PFS_IHC_OV), print = TRUE,
+#                     ncol = 2, nrow = 1, risk.table.height = 0.4)
+
+p8=OS_IHC_OV$plot+PFS_IHC_OV$plot
+p8 #+ labs(tag="J")+ theme(plot.tag = element_text(face = "bold", size=16))
+```
+
+
+
+```{r}
+names(TMAfinal_OV)[11]="PD1_Intratumoral" 
+names(TMAfinal_OV)[9]="CD8_Intratumoral" 
+```
+
+```{r}
+table(TMAfinal_OV$PD1_Intratumoral)
+
+TMAfinal_OV$PD1_Intratumoral[which(TMAfinal_OV$PD1_Intratumoral %in% c(  "10", "20", "30"))] <- ">=10"
+TMAfinal_OV$PD1_Intratumoral[which(TMAfinal_OV$PD1_Intratumoral %in% c( "5", "1", "3"))] <- "1-3"
+TMAfinal_OV$PD1_Intratumoral[which(TMAfinal_OV$PD1_Intratumoral %in% c( "0" ))] <- "0"
+TMAfinal_OV$PD1_Intratumoral = as.factor(TMAfinal_OV$PD1_Intratumoral)
+table(TMAfinal_OV$PD1_Intratumoral)
+
+TMAfinal_OV$PD1_Intratumoral <- factor(TMAfinal_OV$PD1_Intratumoral, levels = c(">=10","1-3","0"),
+                                  labels = c("High PD1_Intratumoral", "Medium PD1_Intratumoral","Low PD1_Intratumoral"))
+
+table(TMAfinal_OV$CD8_Intratumoral)
+TMAfinal_OV$CD8_Intratumoral[which(TMAfinal_OV$CD8_Intratumoral %in% c("5", "7.5"))] <- "5-7.5"
+TMAfinal_OV$CD8_Intratumoral[which(TMAfinal_OV$CD8_Intratumoral %in% c("10", "20", "30"))] <- ">=10"
+TMAfinal_OV$CD8_Intratumoral[which(TMAfinal_OV$CD8_Intratumoral %in% c("0","1", "3"))] <- "0-3"
+TMAfinal_OV$CD8_Intratumoral = as.factor(TMAfinal_OV$CD8_Intratumoral)
+table(TMAfinal_OV$CD8_Intratumoral)
+
+TMAfinal_OV$CD8_Intratumoral <- factor(TMAfinal_OV$CD8_Intratumoral, levels = c(">=10","5-7.5","0-3"),
+                        labels = c("High CD8_Intratumoral", "Medium CD8_Intratumoral", "Low CD8_Intratumoral"))
+```
+
+
+```{r}
+#TMAfinal_OV$FOLR2_intratumoral = ifelse(TMAfinal_OV$FOLR2_intratumoral == "High FOLR2", "High", "Low")
+```
+
+
+```{r}
+
+dat <- table(TMAfinal_OV$FOLR2_intratumoral, TMAfinal_OV$CD8_Intratumoral)
+stats= fisher.test(dat)
+FOLR2_intratumoral_P1 <- ggplot(TMAfinal_OV[!is.na(TMAfinal_OV$FOLR2_intratumoral) & !is.na(TMAfinal_OV$CD8_Intratumoral) ,],
+                                aes(x = FOLR2_intratumoral, fill = CD8_Intratumoral)) + 
+  geom_bar(position="fill") + guides(fill=guide_legend(title="CD8 Intratumoral")) + labs(x="", y="counts")+
+  theme_manuscript() + theme(legend.position = "bottom", legend.text = element_text(size = 9),axis.text.x = element_text(angle = 0))+
+  scale_fill_manual(values=c('#8225BE','#D4C443','#2596BE'))+guides(fill=guide_legend(ncol = 1,title.position = "top", title=""))+ labs(x ="")+ggplot2::annotate(
+  "text",
+  x =1, y = 1.3,
+  label = paste("P. Fisher = ",label= round(stats$p.value, digits = 3)), size=3)
+
+dat <- table(TMAfinal_OV$FOLR2_intratumoral, TMAfinal_OV$PD1_Intratumoral)
+stats= fisher.test(dat)
+FOLR2_intratumoral_P2 <- ggplot(TMAfinal_OV[!is.na(TMAfinal_OV$FOLR2_intratumoral) & !is.na(TMAfinal_OV$PD1_Intratumoral) ,],
+                                aes(x = FOLR2_intratumoral, fill = PD1_Intratumoral)) + 
+  geom_bar(position="fill") + guides(fill=guide_legend(title="PD1 Intratumoral")) + labs(x="", y="counts")+
+  theme_manuscript() +theme(legend.position = "bottom", legend.text = element_text(size = 9),axis.text.x = element_text(angle = 0))+
+  scale_fill_manual(values=c('#8225BE','#D4C443','#2596BE'))+guides(fill=guide_legend(ncol = 1,title.position = "top", title="")) + labs(x ="")+ggplot2::annotate(
+  "text",
+  x =1, y = 1.3,
+  label = paste("P. Fisher = ",label= round(stats$p.value, digits = 3)), size=3)
+
+```
+
+```{r fig.height=6, fig.width=10}
+library(patchwork)
+p9=FOLR2_intratumoral_P1+ggtitle("FOLR2+ Intratumoral")+FOLR2_intratumoral_P2 + ggtitle("FOLR2+ Intratumoral")
+p9# labs(tag="L")+ theme(plot.tag = element_text(face = "bold", size=16))
+```
+
+
+```{r}
+p4.1=p4/p5
+p7.1=p7/p8
+```
+
+```{r fig.height=10, fig.width=20}
+p1.2
+```
+
+
+
+
+```{r fig.height=5, fig.width=9}
+
+survs=p4.1|p7.1
+survs
+
+```
+```{r}
+p1 / survs
+```
+
+
+```{r fig.height=10, fig.width=12}
+p2.1=p3+labs(tag = 'C') + theme(plot.tag = element_text(face = "bold", size=16))+p10+labs(tag = 'D') + theme(plot.tag = element_text(face = "bold", size=16))
+p2.1
+```
+
+
+```{r}
+barpl=p6|p9
+```
+
+
+
+

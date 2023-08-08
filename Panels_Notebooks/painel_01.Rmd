@@ -1,0 +1,311 @@
+---
+title: "Figure 1"
+output: html_notebook
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r library packages}
+suppressPackageStartupMessages({
+  library(Seurat)
+  library(dplyr)
+  library(ggplot2)
+  library(dendextend)
+  library(circlize)
+  library(ComplexHeatmap)
+  library(png)
+  library(RColorBrewer)
+  library(patchwork)
+  library(cowplot)
+  library(Nebulosa)
+})
+```
+
+```{r}
+pal = c(
+  "Conventional Dendritic Cells" = "#45A3D5",
+  "Macrophages" = "#C40EB7",
+  "Mast Cells" = "#5BA4A6",
+  "Monocytes" = "#BA3F4F",
+  "Neutrophils" = "#C95B3C"
+)
+
+tema <- list(
+  theme(
+    plot.title = element_text(size = 12, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.text = element_text(size = 20, colour = 'black'),
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size=15),
+    axis.title = element_text(size = 12),
+    legend.text = element_text(size = 20)
+  )
+)
+```
+
+```{r set wd and load data}
+load("/data/01_figure.RData")
+```
+
+```{r p1 blank}
+p1 <-
+  patchwork::plot_spacer() + theme(panel.background = (element_rect(fill = 'white', colour = 'white'))) 
+```
+
+```{r}
+SampleType <- c('blood', 'blood', 'blood', 'lymphnode', 'normal', 'normal', 'normal', 'normal', 'normal', 'tumor', 'tumor', 'tumor', 'tumor', 'tumor', 'tumor', 'tumor')
+TumorType <- c('PBMC', 'breast', 'lung', 'breast', 'breast', 'colorectal', 'lung', 'ovary', 'skin', 'breast', 'colorectal', 'liver', 'lung', 'ovary', 'skin', 'uvea')
+Counts <- c('2645', '14992', '16876', '4684', '4243', '6126', '72944', '8576', '13849', '47364', '13164', '7370', '77523', '59315', '6238', '52367')
+df <- data.frame(SampleType, TumorType, Counts)
+colnames(df) <- c("SampleType", "TumorType", "Number of Cells")
+df$tempvar <- "Sample Type"
+df$`Number of Cells`=as.numeric(df$`Number of Cells`)
+level_order <- c('uvea', 'skin', 'ovary', 'lung', 'liver', 'colorectal', 'breast', 'PBMC')
+sample_order <- c('blood', 'lymphnode', 'normal', 'tumor')
+
+p2a <- ggplot(df,aes(x = factor(SampleType, levels= sample_order), y = factor(TumorType, levels = level_order))) + 
+  geom_point(aes(size=`Number of Cells`), colour = "mediumpurple1") + 
+  scale_size(range=c(2,10), breaks = seq(0, 77000, 11000)) + 
+  geom_point(aes(size=`Number of Cells`), colour = "mediumpurple1", show.legend=FALSE) + 
+  theme(axis.title.y=element_blank(), axis.text.y=element_blank(), axis.ticks.y=element_blank(), 
+        axis.text.x = element_text(size=18, vjust = -2.2), axis.title=element_text(size=15, color = "black"), axis.title.x = element_blank(), 
+        panel.border = element_rect(colour = "black", fill=NA, size=1), panel.background = element_rect(fill = "white"), 
+        panel.grid.major = element_line(size = 0.25, linetype = 'dotted', colour = "black"), 
+        legend.key = element_rect(fill = "white"), legend.title = element_text(size=15), legend.text = element_text(size=15))                                                                                               
+p2a <- p2a + facet_grid(. ~ tempvar) +
+  theme(strip.background = element_rect(fill="#B2B1B1"),
+        strip.text = element_text(size=17, colour="white"), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, color = "black"))
+
+value <- c('52367', '67891', '20087', '167343', '7370', '19290', '71283', '2645')
+total <- c("total", "total", "total", "total", "total", "total", "total", "total")
+df2 <- data.frame(level_order, value, total)
+df2$tempvar <- "Total"
+df2$value=as.numeric(df2$value)
+
+p2b <- ggplot(df2,aes(x = total, y = factor(level_order, levels = level_order))) + 
+  geom_point(aes(size=value), colour = "mediumpurple1") + scale_size(range=c(4,4), breaks = seq(675, 177228, 10000)) + 
+  theme(legend.position="none", axis.text=element_text(size=18), axis.text.x=element_blank(), 
+        axis.title.y=element_text(size=17, color = "black"), 
+        axis.title.x=element_blank(), axis.ticks.x = element_blank(), 
+        panel.border = element_rect(colour = "black", fill=NA, size=1), 
+        panel.background = element_rect(fill = "white")) + 
+  labs (y = "Tumor Type") + 
+  geom_text(aes(label = value), hjust = 0.5, vjust = 2, size = 5)  
+p2b <- p2b + facet_grid(. ~ tempvar) +
+  theme(strip.background = element_rect(fill="#B2B1B1"),
+        strip.text = element_text(size=17, colour="white"), axis.title.y=element_text(color = "black"), 
+        axis.text.y=element_text(color = "black"))
+
+layout <- "AABBBBBBB"
+
+p2 = p2b + p2a + plot_layout(design = layout)
+```
+
+```{r p2 UMAP}
+p3 <- DimPlot(data, group.by = 'celltype', raster = T, pt.size = 1, shuffle = T, cols = pal, seed = 1) + ggtitle("") & NoAxes() & NoLegend()
+
+p3 <- LabelClusters(p3, id = "celltype", fontface = "bold", color = "white", repel = T, box = T, size = 5)
+```
+
+```{r}
+lyz = plot_density(data, features = c("ENSG00000090382"), pal = 'magma', raster = T) & ggtitle("LYZ")
+aif1 = plot_density(data, features = c("ENSG00000204472"), pal = 'magma', raster = T) & ggtitle("AIF1")
+hla = plot_density(data, features = c("ENSG00000170458"), pal = 'magma', raster = T) & ggtitle("HLA-DRA")
+
+cxcr2 = plot_density(data, features = c("ENSG00000180871"), pal = 'magma', raster = T) & ggtitle("CXCR2")
+fcgr3b = plot_density(data, features = c("ENSG00000162747"), pal = 'magma', raster = T) & ggtitle("FCGR3B")
+data <- UCell::AddModuleScore_UCell(data, features = list(c('ENSG00000182885', 'ENSG00000162747')), name = "Neu Score")
+neu_score = plot_density(data, features = 'signature_1Neu.Score', pal = 'magma', raster = T) & ggtitle("Neutrophil Score")
+
+tpsab1 = plot_density(data, features = c("ENSG00000172236"), pal = 'magma', raster = T) & ggtitle("TPSAB1")
+cpa3 = plot_density(data, features = c("ENSG00000163751"), pal = 'magma', raster = T) & ggtitle("CPA3")
+data <- UCell::AddModuleScore_UCell(data, features = list(c('ENSG00000172236', 'ENSG00000163751')), name = "Mast Score")
+mast_score = plot_density(data, features = 'signature_1Mast.Score', pal = 'magma', raster = T) & ggtitle("Mast Score")
+
+data <- UCell::AddModuleScore_UCell(data, features = list(c('ENSG00000173372', 'ENSG00000129226')), name = "Macrophage Score")
+mac_score = plot_density(data, features = 'signature_1Macrophage.Score', pal = 'magma', raster = T) & ggtitle("Macrophage Score")
+
+data <- UCell::AddModuleScore_UCell(data, features = list(c('ENSG00000158481', 'ENSG00000179639', 'ENSG00000078081', 'ENSG00000197992')), name = "Dendritic Score")
+dend_score = plot_density(data, features = 'signature_1Dendritic.Score', pal = 'magma', raster = T) & ggtitle("DC Score")
+
+data <- UCell::AddModuleScore_UCell(data, features = list(c('ENSG00000038427', 'ENSG00000085265')), name = "Monocyte Score")
+mono_score = plot_density(data, features = c('signature_1Monocyte.Score'), pal = 'magma', raster = T) & ggtitle("Monocyte Score")
+```
+
+```{r p3 dotplot}
+ensbl <- c('ENSG00000180871', 'ENSG00000162747', "ENSG00000172236", "ENSG00000163751",
+           "ENSG00000038427", "ENSG00000085265", "ENSG00000158481", "ENSG00000179639",
+           'ENSG00000173372', 'ENSG00000173369')
+
+gene_id <- c("CXCR2", "FCGR3B", "TPSAB1", "CPA3", "VCAN", "FCN1", "CD1C", "FCER1A", "C1QA", "C1QB")
+
+p4c <- DotPlot(
+  data,
+  features = ensbl,
+  col.min = -1,
+  col.max = 1,
+  cols = c('RdBu'),
+  scale = T,
+  dot.scale = 10,
+  dot.min = 0.25
+)
+
+p4c$data$features.plot <- factor(gene_id, levels = gene_id)
+
+p4c <-
+  p4c + ylab("") + xlab("") + tema  + guides(color = guide_colorbar(title = "Scaled Average Expression"))
+
+
+p4 <- (lyz | aif1 | hla) / (dend_score | mono_score | mac_score) / (cxcr2 | fcgr3b | neu_score) / (tpsab1 | cpa3 | mast_score) & NoAxes()
+```
+
+```{r p4 heatmap}
+mono_genes <- c('VCAN', 'FCN1', 'THBS1', 'WARS', 'CD300E')
+top20 <- deg %>% 
+  group_by(cluster) %>% 
+  top_n(n = 20, wt = avg_log2FC) %>% 
+ dplyr::filter(cluster != "Monocytes" | (cluster == "Monocytes" & gene %in% mono_genes))
+
+# neut_genes <- c("IFITM2", "CXCR2", "FCGR3B", "IL1R2", "ADGRG3")
+# top20 <- top20 %>% 
+#   group_by(cluster) %>% 
+#   top_n(n = 20, wt = avg_log2FC) %>% 
+#   filter(cluster != "Neutrophils" | cluster == "Neutrophils" & gene %in% neut_genes)
+
+top5 <- top20 %>%
+  group_by(cluster) %>%
+  top_n(n = 5, wt = avg_log2FC)
+
+top5$cluster <- factor(top5$cluster, levels = c(
+    "Macrophages",
+    "Neutrophils", 
+    "Monocytes",
+    "Conventional Dendritic Cells",
+    "Mast Cells"
+  )) 
+top5= top5 %>%  arrange(cluster)
+
+expr_a <- averages@assays$RNA@counts %>% as.data.frame()
+
+indx <- which(rownames(expr_a) %in% top5$gene)
+expr_a <- expr_a[indx, ]
+expr_a$gene <- rownames(expr_a)
+expr_a <- expr_a %>%
+  mutate(gene =  factor(gene, levels = top5$gene)) %>%
+  arrange(gene)
+
+mat = as.matrix(expr_a[, 1:5])
+base_mean = rowMeans(mat)
+mat_scaled = t(apply(mat, 1, scale))
+colnames(mat_scaled)  <- colnames(mat)
+
+expr_a <- inner_join(expr_a, top5)
+
+ann_colors <-
+  list(
+    Celltype = c(
+      "Conventional Dendritic Cells" = "#45A3D5",
+      "Macrophages" = "#C40EB7",
+      "Mast Cells" = "#5BA4A6",
+      "Monocytes" = "#BA3F4F",
+      "Neutrophils" = "#C95B3C"
+    )
+  )
+
+levels <- data.frame(Celltype = factor(
+  colnames(mat_scaled),
+  levels = c(
+    "Macrophages",
+    "Neutrophils", 
+    "Monocytes",
+    "Conventional Dendritic Cells",
+    "Mast Cells"
+  )
+))
+
+levels <- levels %>%
+  mutate(Celltype = factor(
+    colnames(mat_scaled),
+    levels = c(
+    "Macrophages",
+    "Neutrophils", 
+    "Monocytes",
+    "Conventional Dendritic Cells",
+    "Mast Cells"
+    )
+  )) %>%
+  arrange(Celltype)
+levels$Value = c(38517, 12033, 10321, 6212, 4539)
+
+mat_scaled <-
+  mat_scaled[, c(
+    "Macrophages",
+    "Neutrophils", 
+    "Monocytes",
+    "Conventional Dendritic Cells",
+    "Mast Cells"
+  )]
+
+ha = HeatmapAnnotation(
+  `Nº of cells` = anno_barplot(
+    levels$Value,
+    border = F,
+    add_numbers = TRUE,
+    angle = 90
+  ),
+  Celltype = levels$Celltype,
+  col = ann_colors
+)
+
+
+p5 = Heatmap(
+  mat_scaled,
+  name = "z-score",
+  col = colorRamp2(seq(
+    from = -2, to = 2, length = 11
+  ), rev(brewer.pal(11, "RdBu"))),
+  show_row_names = TRUE,
+  top_annotation = ha,
+  show_column_names = FALSE,
+  row_names_gp = gpar(fontsize = 10),
+  row_title_rot = 0,
+  cluster_rows = F,
+  cluster_row_slices = FALSE,
+  cluster_columns = FALSE
+)
+
+p5 = ggplotify::as.ggplot(p5)
+```
+
+```{r p5 dendrogram}
+par(mfrow = c(1,1), mar = c(0,0,0,0))
+colnames(tme_av) <- ifelse(colnames(tme_av) == 'Mac_Reg', 'Mac_AgPres', colnames(tme_av))
+rownames(tme_av) <- ifelse(rownames(tme_av) == 'Mac_Reg', 'Mac_AgPres', rownames(tme_av))
+
+hc <- as.dendrogram(hclust(as.dist(tme_av)))
+
+hc <- hc %>% set("labels_cex", 1.3) %>% set("branches_lwd", 2) %>% 
+  color_branches(tme_av, k = 5, col = pal2, groupLabels = TRUE) %>% color_labels(k = 5, col = pal2) %>% 
+  as.dendrogram(hclust(as.dist(tme_av)))
+png("~/data/fig1_dendrogram.png", width = 9, height = 8, res = 300, units = 'in')
+circlize_dendrogram(hc, dend_track_height = 0.5, labels_track_height = 0.45)
+dev.off()
+```
+
+```{r}
+p6 = rasterGrob(readPNG("/data/fig1_dendrogram.png"),interpolate = T)
+```
+
+
+#### PANEL --------------------------------------------------------------------
+
+```{r fig.width=20, fig.height=17}
+panelGA = cowplot::plot_grid(plot(p1), p2, ncol=2, nrow=1, rel_widths = c(2,1.5), heights = c(1), labels = c("a", "b"), label_size = 20)
+panel1a = cowplot::plot_grid(p3,p4, ncol=2, nrow=1, rel_widths = c(1.5,2), heights = c(0.5), labels = c("c", "d"), hjust = -0.5, vjust = -0.5, label_size = 20)
+panel1b = cowplot::plot_grid((p4c+coord_flip()), p5,p6, ncol=3, nrow=1, rel_widths = c(1.5,1.5,2), heights = c(1), labels = c("e", "f", "g"), hjust = -0.5, vjust = -0.5, label_size = 20)
+
+panel1 = cowplot::plot_grid(panelGA, panel1a, panel1b, nrow=3, rel_heights = c(0.6, 0.8,0.8))
+```
+
+```{r fig.width=22, fig.height=26}
+panel1
+```

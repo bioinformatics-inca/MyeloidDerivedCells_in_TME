@@ -1,0 +1,1223 @@
+---
+title: "Step1_BayesPrism"
+author: Cristiane Esteves
+output: html_notebook
+---
+
+```{r}
+.libPaths("")
+library(BayesPrism)
+library(data.table)
+library(Seurat)
+library(dplyr)
+setwd("~/Path/")
+```
+
+## LUSC
+
+```{r}
+bulk.matrix.before <- as.matrix(fread("mixtures/TCGA_LUSC_mixture.txt", header = TRUE, showProgress = TRUE), rownames = 1)
+bulk.matrix.before[1:5,1:5]
+dim(bulk.matrix.before)
+nams = rownames(bulk.matrix.before)
+rownames(bulk.matrix.before) = make.names(nams, unique=TRUE)
+bulk.matrix.before = as.data.frame(bulk.matrix.before)
+colnames(bulk.matrix.before) = gsub("\\.", "-", colnames(bulk.matrix.before))
+```
+
+```{r}
+lusc <- readRDS("lusc.rds")
+
+get.raw.data <- function(obj) Seurat::GetAssayData(object = obj, 
+                                                   slot = "counts")
+
+
+
+sc.counts.matrix <- base::as.matrix(t(get.raw.data(lusc)))
+
+
+head(sc.counts.matrix[1:5,1:5])
+```
+
+
+```{r}
+celltype=lusc$first_celltype2 
+states = lusc$celltype
+rm(lusc)
+plot.cor.phi (input=sc.counts.matrix, 
+                         input.labels=celltype, 
+                         title="cell type correlation",
+                         #specify pdf.prefix if need to output to pdf
+                         #pdf.prefix="gbm.cor.ct",
+                         cexRow=0.5, cexCol=0.5,
+                         )
+```
+
+```{r}
+plot.cor.phi (input=sc.counts.matrix, 
+                         input.labels=states, 
+                         title="cell states correlation",
+                         #specify pdf.prefix if need to output to pdf
+                         #pdf.prefix="gbm.cor.ct",
+                         cexRow=0.5, cexCol=0.5,
+                         )
+```
+
+
+```{r}
+sc.stat <- plot.scRNA.outlier(
+  input=sc.counts.matrix, #make sure the colnames are gene symbol or ENSMEBL ID 
+  cell.type.labels=states,
+  species="hs", #currently only human(hs) and mouse(mm) annotations are supported
+  return.raw=TRUE #return the data used for plotting. 
+  #pdf.prefix="gbm.sc.stat" specify pdf.prefix if need to output to pdf
+)
+```
+
+```{r}
+head(sc.stat)
+```
+
+```{r}
+bk.stat <- plot.bulk.outlier(
+  bulk.input=as.matrix(t(bulk.matrix.before)),#make sure the colnames are gene symbol or ENSMEBL ID 
+    sc.input=sc.counts.matrix, #make sure the colnames are gene symbol or ENSMEBL ID 
+  cell.type.labels=states,
+  species="hs", #currently only human(hs) and mouse(mm) annotations are supported
+  return.raw=TRUE,
+  #pdf.prefix="gbm.bk.stat" specify pdf.prefix if need to output to pdf
+)
+
+head(bk.stat)
+```
+
+```{r}
+sc.dat.filtered <- cleanup.genes (input=sc.counts.matrix,
+                                  input.type="count.matrix",
+                                    species="hs", 
+                                    gene.group=c("Rb","Mrp","other_Rb") ,
+                                    exp.cells=5)
+
+```
+
+
+```{r}
+plot.bulk.vs.sc (sc.input = sc.dat.filtered,
+                            bulk.input = as.matrix(t(bulk.matrix.before)), pdf.prefix = "lusc", return.value = T)
+
+
+```
+
+```{r}
+sc.dat.filtered.pc <-  select.gene.type (sc.dat.filtered,
+                                        gene.type = "protein_coding")
+```
+
+
+```{r}
+diff.exp.stat <- get.exp.stat(sc.dat=sc.counts.matrix[,colSums(sc.counts.matrix>0)>10],# filter genes to reduce memory use
+                                          cell.type.labels=celltype,
+                                          cell.state.labels=states,
+                                          psuedo.count=0.1, #a numeric value used for log2 transformation. =0.1 for 10x data, =10 for smart-seq. Default=0.1.
+                                          cell.count.cutoff=50, # a numeric value to exclude cell state with number of cells fewer than this value for t test. Default=50.
+                                          n.cores=1 #number of threads
+                                          )
+```
+
+```{r}
+sc.dat.filtered.pc.sig <- select.marker (sc.dat=sc.dat.filtered.pc,
+                                                  stat=diff.exp.stat,
+                                                  pval.max=0.01,
+                                                  lfc.min=0.1)
+```
+
+```{r}
+myPrism_lusc <- new.prism(
+  reference=sc.dat.filtered.pc.sig, 
+  mixture=as.matrix(t(bulk.matrix.before)),
+  input.type="count.matrix", 
+  cell.type.labels = celltype, 
+  cell.state.labels = states,
+  key="Malignant Cells",
+  outlier.cut=0.01,
+    outlier.fraction=0.1,
+)
+
+saveRDS(myPrism_lusc, "myPrism_lusc.rds")
+
+```
+
+##  Breast
+
+```{r}
+library(data.table)
+bulk.matrix.before <- as.matrix(fread("mixtures/TCGA_BRCA_mixture.txt", header = TRUE, showProgress = TRUE), rownames = 1)
+bulk.matrix.before[1:5,1:5]
+dim(bulk.matrix.before)
+nams = rownames(bulk.matrix.before)
+rownames(bulk.matrix.before) = make.names(nams, unique=TRUE)
+bulk.matrix.before = as.data.frame(bulk.matrix.before)
+colnames(bulk.matrix.before) = gsub("\\.", "-", colnames(bulk.matrix.before))
+```
+
+```{r}
+breast <- readRDS("breast.rds")
+
+get.raw.data <- function(obj) Seurat::GetAssayData(object = obj, 
+                                                   slot = "counts")
+
+sc.counts.matrix = get.raw.data(breast)
+sc.counts.matrix = as(sc.counts.matrix, "dgTMatrix")
+sc.counts.matrix <- base::as.matrix(t(sc.counts.matrix))
+
+
+head(sc.counts.matrix[1:5,1:5])
+```
+
+
+```{r}
+celltype=breast$first_celltype2 
+states = breast$celltype
+rm(breast)
+plot.cor.phi (input=sc.counts.matrix, 
+                         input.labels=celltype, 
+                         title="cell type correlation",
+                         #specify pdf.prefix if need to output to pdf
+                         #pdf.prefix="gbm.cor.ct",
+                         cexRow=0.5, cexCol=0.5,
+                         )
+```
+
+```{r}
+plot.cor.phi (input=sc.counts.matrix, 
+                         input.labels=states, 
+                         title="cell type correlation",
+                         #specify pdf.prefix if need to output to pdf
+                         #pdf.prefix="gbm.cor.ct",
+                         cexRow=0.5, cexCol=0.5,
+                         )
+```
+
+
+```{r}
+sc.stat <- plot.scRNA.outlier(
+  input=sc.counts.matrix, #make sure the colnames are gene symbol or ENSMEBL ID 
+  cell.type.labels=states,
+  species="hs", #currently only human(hs) and mouse(mm) annotations are supported
+  return.raw=TRUE #return the data used for plotting. 
+  #pdf.prefix="gbm.sc.stat" specify pdf.prefix if need to output to pdf
+)
+```
+
+```{r}
+head(sc.stat)
+```
+
+```{r}
+bk.stat <- plot.bulk.outlier(
+  bulk.input=as.matrix(t(bulk.matrix.before)),#make sure the colnames are gene symbol or ENSMEBL ID 
+    sc.input=sc.counts.matrix, #make sure the colnames are gene symbol or ENSMEBL ID 
+  cell.type.labels=states,
+  species="hs", #currently only human(hs) and mouse(mm) annotations are supported
+  return.raw=TRUE,
+  #pdf.prefix="gbm.bk.stat" specify pdf.prefix if need to output to pdf
+)
+
+head(bk.stat)
+```
+
+```{r}
+sc.dat.filtered <- cleanup.genes (input=sc.counts.matrix,
+                                  input.type="count.matrix",
+                                    species="hs", 
+                                    gene.group=c("Rb","Mrp","other_Rb") ,
+                                    exp.cells=5)
+
+```
+
+```{r}
+plot.bulk.vs.sc (sc.input = sc.dat.filtered,
+                            bulk.input = as.matrix(t(bulk.matrix.before)),
+                            pdf.prefix="BRCA") #specify pdf.prefix if need to output to pdf
+
+```
+
+
+
+```{r}
+sc.dat.filtered.pc <-  select.gene.type (sc.dat.filtered,
+                                        gene.type = "protein_coding")
+```
+
+
+```{r}
+diff.exp.stat <- get.exp.stat(sc.dat=sc.counts.matrix[,colSums(sc.counts.matrix>0)>10],# filter genes to reduce memory use
+                                          cell.type.labels=celltype,
+                                          cell.state.labels=states,
+                                          psuedo.count=0.1, #a numeric value used for log2 transformation. =0.1 for 10x data, =10 for smart-seq. Default=0.1.
+                                          cell.count.cutoff=50, # a numeric value to exclude cell state with number of cells fewer than this value for t test. Default=50.
+                                          n.cores=1 #number of threads
+                                          )
+```
+
+```{r}
+sc.dat.filtered.pc.sig <- select.marker (sc.dat=sc.dat.filtered.pc,
+                                                  stat=diff.exp.stat,
+                                                  pval.max=0.01,
+                                                  lfc.min=0.1)
+```
+
+```{r}
+myPrism_breast <- new.prism(
+  reference=sc.dat.filtered.pc.sig, 
+  mixture=as.matrix(t(bulk.matrix.before)),
+  input.type="count.matrix", 
+  cell.type.labels = celltype, 
+  cell.state.labels = states,
+  key="Malignant Cells",
+  outlier.cut=0.01,
+    outlier.fraction=0.1,
+)
+
+saveRDS(myPrism_breast, "myPrism_breast.rds")
+
+```
+
+
+## OVARY
+
+```{r}
+bulk.matrix.before <- as.matrix(fread("mixtures/TCGA_OV_mixture.txt", header = TRUE, showProgress = TRUE), rownames = 1)
+bulk.matrix.before[1:5,1:5]
+dim(bulk.matrix.before)
+nams = rownames(bulk.matrix.before)
+rownames(bulk.matrix.before) = make.names(nams, unique=TRUE)
+bulk.matrix.before = as.data.frame(bulk.matrix.before)
+colnames(bulk.matrix.before) = gsub("\\.", "-", colnames(bulk.matrix.before))
+```
+
+```{r}
+ovary <- readRDS("ovary.rds")
+
+get.raw.data <- function(obj) Seurat::GetAssayData(object = obj, 
+                                                   slot = "counts")
+
+sc.counts.matrix = get.raw.data(ovary)
+sc.counts.matrix = as(sc.counts.matrix, "dgTMatrix")
+#sc.counts.matrix = as.data.frame(sc.counts.matrix)
+sc.counts.matrix <- base::as.matrix(t(sc.counts.matrix))
+
+
+head(sc.counts.matrix[1:5,1:5])
+```
+
+
+```{r}
+celltype=ovary$first_celltype2 
+states = ovary$celltype
+rm(ovary)
+plot.cor.phi (input=sc.counts.matrix, 
+                         input.labels=celltype, 
+                         title="cell type correlation",
+                         #specify pdf.prefix if need to output to pdf
+                         #pdf.prefix="gbm.cor.ct",
+                         cexRow=0.5, cexCol=0.5,
+                         )
+```
+
+```{r}
+plot.cor.phi (input=sc.counts.matrix, 
+                         input.labels=states, 
+                         title="cell type correlation",
+                         #specify pdf.prefix if need to output to pdf
+                         #pdf.prefix="gbm.cor.ct",
+                         cexRow=0.5, cexCol=0.5,
+                         )
+```
+
+
+```{r}
+sc.stat <- plot.scRNA.outlier(
+  input=sc.counts.matrix, #make sure the colnames are gene symbol or ENSMEBL ID 
+  cell.type.labels=celltype,
+  species="hs", #currently only human(hs) and mouse(mm) annotations are supported
+  return.raw=TRUE #return the data used for plotting. 
+  #pdf.prefix="gbm.sc.stat" specify pdf.prefix if need to output to pdf
+)
+```
+
+```{r}
+head(sc.stat)
+```
+
+```{r}
+bk.stat <- plot.bulk.outlier(
+  bulk.input=as.matrix(t(bulk.matrix.before)),#make sure the colnames are gene symbol or ENSMEBL ID 
+    sc.input=sc.counts.matrix, #make sure the colnames are gene symbol or ENSMEBL ID 
+  cell.type.labels=celltype,
+  species="hs", #currently only human(hs) and mouse(mm) annotations are supported
+  return.raw=TRUE,
+  #pdf.prefix="gbm.bk.stat" specify pdf.prefix if need to output to pdf
+)
+
+head(bk.stat)
+```
+
+```{r}
+sc.dat.filtered <- cleanup.genes (input=sc.counts.matrix,
+                                  input.type="count.matrix",
+                                    species="hs", 
+                                    gene.group=c("Rb","Mrp","other_Rb") ,
+                                    exp.cells=5)
+
+```
+
+```{r}
+plot.bulk.vs.sc (sc.input = sc.dat.filtered,
+                            bulk.input = as.matrix(t(bulk.matrix.before)),
+                            pdf.prefix="OV" #specify pdf.prefix if need to output to pdf
+)
+```
+
+
+```{r}
+sc.dat.filtered.pc <-  select.gene.type (sc.dat.filtered,
+                                        gene.type = "protein_coding")
+```
+
+
+```{r}
+diff.exp.stat <- get.exp.stat(sc.dat=sc.counts.matrix[,colSums(sc.counts.matrix>0)>5],# filter genes to reduce memory use
+                                          cell.type.labels=celltype,
+                                          cell.state.labels=states,
+                                          psuedo.count=0.1, #a numeric value used for log2 transformation. =0.1 for 10x data, =10 for smart-seq. Default=0.1.
+                                          cell.count.cutoff=50, # a numeric value to exclude cell state with number of cells fewer than this value for t test. Default=50.
+                                          n.cores=1 #number of threads
+                                          )
+```
+
+```{r}
+sc.dat.filtered.pc.sig <- select.marker (sc.dat=sc.dat.filtered.pc,
+                                                  stat=diff.exp.stat,
+                                                  pval.max=0.01,
+                                                  lfc.min=0.1)
+```
+
+```{r}
+myPrism_ovary <- new.prism(
+  reference=sc.dat.filtered.pc.sig, 
+  mixture=as.matrix(t(bulk.matrix.before)),
+  input.type="count.matrix", 
+  cell.type.labels = celltype, 
+  cell.state.labels = states,
+  key="Malignant Cells",
+  outlier.cut=0.01,
+    outlier.fraction=0.1,
+)
+
+saveRDS(myPrism_ovary, "myPrism_ovary.rds")
+
+```
+
+## LUAD
+
+```{r}
+bulk.matrix.before <- as.matrix(fread("mixtures/TCGA_LUAD_mixture.txt", header = TRUE, showProgress = TRUE), rownames = 1)
+bulk.matrix.before[1:5,1:5]
+dim(bulk.matrix.before)
+nams = rownames(bulk.matrix.before)
+rownames(bulk.matrix.before) = make.names(nams, unique=TRUE)
+bulk.matrix.before = as.data.frame(bulk.matrix.before)
+colnames(bulk.matrix.before) = gsub("\\.", "-", colnames(bulk.matrix.before))
+```
+
+```{r}
+luad <- readRDS("luad.rds")
+
+get.raw.data <- function(obj) Seurat::GetAssayData(object = obj, 
+                                                   slot = "counts")
+
+sc.counts.matrix = get.raw.data(luad)
+sc.counts.matrix = as(sc.counts.matrix, "dgTMatrix")
+#sc.counts.matrix = as.data.frame(sc.counts.matrix)
+sc.counts.matrix <- base::as.matrix(t(sc.counts.matrix))
+
+
+head(sc.counts.matrix[1:5,1:5])
+```
+
+
+```{r}
+celltype=luad$first_celltype2 
+states = luad$celltype
+rm(luad)
+plot.cor.phi (input=sc.counts.matrix, 
+                         input.labels=celltype, 
+                         title="cell type correlation",
+                         #specify pdf.prefix if need to output to pdf
+                         #pdf.prefix="gbm.cor.ct",
+                         cexRow=0.5, cexCol=0.5,
+                         )
+```
+
+```{r}
+plot.cor.phi (input=sc.counts.matrix, 
+                         input.labels=states, 
+                         title="cell type correlation",
+                         #specify pdf.prefix if need to output to pdf
+                         #pdf.prefix="gbm.cor.ct",
+                         cexRow=0.5, cexCol=0.5,
+                         )
+```
+
+
+```{r}
+sc.stat <- plot.scRNA.outlier(
+  input=sc.counts.matrix, #make sure the colnames are gene symbol or ENSMEBL ID 
+  cell.type.labels=celltype,
+  species="hs", #currently only human(hs) and mouse(mm) annotations are supported
+  return.raw=TRUE #return the data used for plotting. 
+  #pdf.prefix="gbm.sc.stat" specify pdf.prefix if need to output to pdf
+)
+```
+
+```{r}
+head(sc.stat)
+```
+
+```{r}
+bk.stat <- plot.bulk.outlier(
+  bulk.input=as.matrix(t(bulk.matrix.before)),#make sure the colnames are gene symbol or ENSMEBL ID 
+    sc.input=sc.counts.matrix, #make sure the colnames are gene symbol or ENSMEBL ID 
+  cell.type.labels=celltype,
+  species="hs", #currently only human(hs) and mouse(mm) annotations are supported
+  return.raw=TRUE,
+  #pdf.prefix="gbm.bk.stat" specify pdf.prefix if need to output to pdf
+)
+
+head(bk.stat)
+```
+
+```{r}
+sc.dat.filtered <- cleanup.genes (input=sc.counts.matrix,
+                                  input.type="count.matrix",
+                                    species="hs", 
+                                    gene.group=c("Rb","Mrp","other_Rb") ,
+                                    exp.cells=5)
+
+```
+
+```{r}
+plot.bulk.vs.sc (sc.input = sc.dat.filtered,
+                            bulk.input = as.matrix(t(bulk.matrix.before)),
+                            pdf.prefix="luad" #specify pdf.prefix if need to output to pdf
+)
+```
+
+
+```{r}
+sc.dat.filtered.pc <-  select.gene.type (sc.dat.filtered,
+                                        gene.type = "protein_coding")
+```
+
+
+```{r}
+diff.exp.stat <- get.exp.stat(sc.dat=sc.counts.matrix[,colSums(sc.counts.matrix>0)>10],# filter genes to reduce memory use
+                                          cell.type.labels=celltype,
+                                          cell.state.labels=states,
+                                          psuedo.count=0.1, #a numeric value used for log2 transformation. =0.1 for 10x data, =10 for smart-seq. Default=0.1.
+                                          cell.count.cutoff=50, # a numeric value to exclude cell state with number of cells fewer than this value for t test. Default=50.
+                                          n.cores=1 #number of threads
+                                          )
+```
+
+```{r}
+sc.dat.filtered.pc.sig <- select.marker (sc.dat=sc.dat.filtered.pc,
+                                                  stat=diff.exp.stat,
+                                                  pval.max=0.01,
+                                                  lfc.min=0.1)
+```
+
+```{r}
+myPrism_luad <- new.prism(
+  reference=sc.dat.filtered.pc.sig, 
+  mixture=as.matrix(t(bulk.matrix.before)),
+  input.type="count.matrix", 
+  cell.type.labels = celltype, 
+  cell.state.labels = states,
+  key="Malignant Cells",
+  outlier.cut=0.01,
+    outlier.fraction=0.1,
+)
+
+saveRDS(myPrism_luad, "myPrism_luad.rds")
+
+```
+
+# lIVER
+
+
+```{r}
+bulk.matrix.before <- as.matrix(fread("mixtures/TCGA_LIHC_mixture.txt", header = TRUE, showProgress = TRUE), rownames = 1)
+bulk.matrix.before[1:5,1:5]
+dim(bulk.matrix.before)
+nams = rownames(bulk.matrix.before)
+rownames(bulk.matrix.before) = make.names(nams, unique=TRUE)
+bulk.matrix.before = as.data.frame(bulk.matrix.before)
+colnames(bulk.matrix.before) = gsub("\\.", "-", colnames(bulk.matrix.before))
+```
+
+```{r}
+liver <- readRDS("liver.rds")
+
+get.raw.data <- function(obj) Seurat::GetAssayData(object = obj, 
+                                                   slot = "counts")
+
+sc.counts.matrix <- base::as.matrix(t(get.raw.data(liver)))
+
+
+head(sc.counts.matrix[1:5,1:5])
+```
+
+
+```{r}
+celltype=liver$first_celltype2 
+states = liver$celltype
+rm(liver)
+plot.cor.phi (input=sc.counts.matrix, 
+                         input.labels=celltype, 
+                         title="cell type correlation",
+                         #specify pdf.prefix if need to output to pdf
+                         #pdf.prefix="gbm.cor.ct",
+                         cexRow=0.5, cexCol=0.5,
+                         )
+
+plot.cor.phi (input=sc.counts.matrix, 
+                         input.labels=states, 
+                         title="cell type correlation",
+                         #specify pdf.prefix if need to output to pdf
+                         #pdf.prefix="gbm.cor.ct",
+                         cexRow=0.5, cexCol=0.5,
+                         )
+```
+
+
+```{r}
+sc.stat <- plot.scRNA.outlier(
+  input=sc.counts.matrix, #make sure the colnames are gene symbol or ENSMEBL ID 
+  cell.type.labels=celltype,
+  species="hs", #currently only human(hs) and mouse(mm) annotations are supported
+  return.raw=TRUE #return the data used for plotting. 
+  #pdf.prefix="gbm.sc.stat" specify pdf.prefix if need to output to pdf
+)
+```
+
+```{r}
+head(sc.stat)
+```
+
+```{r}
+bk.stat <- plot.bulk.outlier(
+  bulk.input=as.matrix(t(bulk.matrix.before)),#make sure the colnames are gene symbol or ENSMEBL ID 
+    sc.input=sc.counts.matrix, #make sure the colnames are gene symbol or ENSMEBL ID 
+  cell.type.labels=celltype,
+  species="hs", #currently only human(hs) and mouse(mm) annotations are supported
+  return.raw=TRUE,
+  #pdf.prefix="gbm.bk.stat" specify pdf.prefix if need to output to pdf
+)
+
+head(bk.stat)
+```
+
+```{r}
+sc.dat.filtered <- cleanup.genes (input=sc.counts.matrix,
+                                  input.type="count.matrix",
+                                    species="hs", 
+                                    gene.group=c("Rb","Mrp","other_Rb") ,
+                                    exp.cells=5)
+
+```
+
+```{r}
+plot.bulk.vs.sc (sc.input = sc.dat.filtered,
+                            bulk.input = as.matrix(t(bulk.matrix.before)),
+                            pdf.prefix="LIHC" #specify pdf.prefix if need to output to pdf
+)
+```
+
+```{r}
+sc.dat.filtered.pc <-  select.gene.type (sc.dat.filtered,
+                                        gene.type = "protein_coding")
+```
+
+
+```{r}
+diff.exp.stat <- get.exp.stat(sc.dat=sc.counts.matrix[,colSums(sc.counts.matrix>0)>10],# filter genes to reduce memory use
+                                          cell.type.labels=celltype,
+                                          cell.state.labels=states,
+                                          psuedo.count=0.1, #a numeric value used for log2 transformation. =0.1 for 10x data, =10 for smart-seq. Default=0.1.
+                                          cell.count.cutoff=50, # a numeric value to exclude cell state with number of cells fewer than this value for t test. Default=50.
+                                          n.cores=1 #number of threads
+                                          )
+```
+
+```{r}
+sc.dat.filtered.pc.sig <- select.marker (sc.dat=sc.dat.filtered.pc,
+                                                  stat=diff.exp.stat,
+                                                  pval.max=0.01,
+                                                  lfc.min=0.1)
+```
+
+```{r}
+myPrism_liver <- new.prism(
+  reference=sc.dat.filtered.pc.sig, 
+  mixture=as.matrix(t(bulk.matrix.before)),
+  input.type="count.matrix", 
+  cell.type.labels = celltype, 
+  cell.state.labels = states,
+  key="Malignant Cells",
+  outlier.cut=0.01,
+    outlier.fraction=0.1,
+)
+
+saveRDS(myPrism_liver, "myPrism_liver.rds")
+
+```
+
+# COLON
+
+
+```{r}
+bulk.matrix.before <- as.matrix(fread("mixtures/TCGA_COAD_mixture.txt", header = TRUE, showProgress = TRUE), rownames = 1)
+bulk.matrix.before[1:5,1:5]
+dim(bulk.matrix.before)
+nams = rownames(bulk.matrix.before)
+rownames(bulk.matrix.before) = make.names(nams, unique=TRUE)
+bulk.matrix.before = as.data.frame(bulk.matrix.before)
+colnames(bulk.matrix.before) = gsub("\\.", "-", colnames(bulk.matrix.before))
+```
+
+```{r}
+load("dadosSobrevida.RData")
+barcode = dados_sobrevida_pancancer[which(dados_sobrevida_pancancer$type == "COAD"),]
+bulk.matrix.before = bulk.matrix.before[substr(colnames(bulk.matrix.before), 1,12) %in% barcode$bcr_patient_barcode]
+```
+
+
+```{r}
+coad <- readRDS("colorectal.rds")
+
+get.raw.data <- function(obj) Seurat::GetAssayData(object = obj, 
+                                                   slot = "counts")
+
+sc.counts.matrix <- base::as.matrix(t(get.raw.data(coad)))
+
+
+head(sc.counts.matrix[1:5,1:5])
+```
+
+
+```{r}
+celltype=coad$first_celltype2 
+states = coad$celltype
+rm(coad)
+plot.cor.phi (input=sc.counts.matrix, 
+                         input.labels=celltype, 
+                         title="cell type correlation",
+                         #specify pdf.prefix if need to output to pdf
+                         #pdf.prefix="gbm.cor.ct",
+                         cexRow=0.5, cexCol=0.5,
+                         )
+```
+
+```{r}
+plot.cor.phi (input=sc.counts.matrix, 
+                         input.labels=states, 
+                         title="cell type correlation",
+                         #specify pdf.prefix if need to output to pdf
+                         #pdf.prefix="gbm.cor.ct",
+                         cexRow=0.5, cexCol=0.5,
+                         )
+```
+
+
+```{r}
+sc.stat <- plot.scRNA.outlier(
+  input=sc.counts.matrix, #make sure the colnames are gene symbol or ENSMEBL ID 
+  cell.type.labels=celltype,
+  species="hs", #currently only human(hs) and mouse(mm) annotations are supported
+  return.raw=TRUE #return the data used for plotting. 
+  #pdf.prefix="gbm.sc.stat" specify pdf.prefix if need to output to pdf
+)
+```
+
+```{r}
+head(sc.stat)
+```
+
+```{r}
+bk.stat <- plot.bulk.outlier(
+  bulk.input=as.matrix(t(bulk.matrix.before)),#make sure the colnames are gene symbol or ENSMEBL ID 
+    sc.input=sc.counts.matrix, #make sure the colnames are gene symbol or ENSMEBL ID 
+  cell.type.labels=celltype,
+  species="hs", #currently only human(hs) and mouse(mm) annotations are supported
+  return.raw=TRUE,
+  #pdf.prefix="gbm.bk.stat" specify pdf.prefix if need to output to pdf
+)
+
+head(bk.stat)
+```
+
+```{r}
+sc.dat.filtered <- cleanup.genes (input=sc.counts.matrix,
+                                  input.type="count.matrix",
+                                    species="hs", 
+                                    gene.group=c("Rb","Mrp","other_Rb") ,
+                                    exp.cells=5)
+
+```
+
+```{r}
+plot.bulk.vs.sc (sc.input = sc.dat.filtered,
+                            bulk.input = as.matrix(t(bulk.matrix.before)),
+                            pdf.prefix="COAD" #specify pdf.prefix if need to output to pdf
+)
+```
+
+
+```{r}
+sc.dat.filtered.pc <-  select.gene.type (sc.dat.filtered,
+                                        gene.type = "protein_coding")
+```
+
+
+```{r}
+diff.exp.stat <- get.exp.stat(sc.dat=sc.counts.matrix[,colSums(sc.counts.matrix>0)>10],# filter genes to reduce memory use
+                                          cell.type.labels=celltype,
+                                          cell.state.labels=states,
+                                          psuedo.count=0.1, #a numeric value used for log2 transformation. =0.1 for 10x data, =10 for smart-seq. Default=0.1.
+                                          cell.count.cutoff=50, # a numeric value to exclude cell state with number of cells fewer than this value for t test. Default=50.
+                                          n.cores=1 #number of threads
+                                          )
+```
+
+```{r}
+sc.dat.filtered.pc.sig <- select.marker (sc.dat=sc.dat.filtered.pc,
+                                                  stat=diff.exp.stat,
+                                                  pval.max=0.01,
+                                                  lfc.min=0.1)
+```
+
+```{r}
+myPrism_coad <- new.prism(
+  reference=sc.dat.filtered.pc.sig, 
+  mixture=as.matrix(t(bulk.matrix.before)),
+  input.type="count.matrix", 
+  cell.type.labels = celltype, 
+  cell.state.labels = states,
+  key="Malignant Cells",
+  outlier.cut=0.01,
+    outlier.fraction=0.1,
+)
+
+saveRDS(myPrism_coad, "myPrism_coad.rds")
+
+```
+
+
+# READ
+
+
+```{r}
+bulk.matrix.before <- as.matrix(fread("mixtures/TCGA_COAD_mixture.txt", header = TRUE, showProgress = TRUE), rownames = 1)
+bulk.matrix.before[1:5,1:5]
+dim(bulk.matrix.before)
+nams = rownames(bulk.matrix.before)
+rownames(bulk.matrix.before) = make.names(nams, unique=TRUE)
+bulk.matrix.before = as.data.frame(bulk.matrix.before)
+colnames(bulk.matrix.before) = gsub("\\.", "-", colnames(bulk.matrix.before))
+```
+
+```{r}
+load("dadosSobrevida.RData")
+barcode = dados_sobrevida_pancancer[which(dados_sobrevida_pancancer$type == "READ"),]
+bulk.matrix.before = bulk.matrix.before[substr(colnames(bulk.matrix.before), 1,12) %in% barcode$bcr_patient_barcode]
+```
+
+
+```{r}
+coad <- readRDS("colorectal.rds")
+
+get.raw.data <- function(obj) Seurat::GetAssayData(object = obj, 
+                                                   slot = "counts")
+
+sc.counts.matrix <- base::as.matrix(t(get.raw.data(coad)))
+
+
+head(sc.counts.matrix[1:5,1:5])
+```
+
+
+```{r}
+celltype=coad$first_celltype2 
+states = coad$celltype
+rm(coad)
+plot.cor.phi (input=sc.counts.matrix, 
+                         input.labels=celltype, 
+                         title="cell type correlation",
+                         #specify pdf.prefix if need to output to pdf
+                         #pdf.prefix="gbm.cor.ct",
+                         cexRow=0.5, cexCol=0.5,
+                         )
+```
+
+
+```{r}
+sc.stat <- plot.scRNA.outlier(
+  input=sc.counts.matrix, #make sure the colnames are gene symbol or ENSMEBL ID 
+  cell.type.labels=celltype,
+  species="hs", #currently only human(hs) and mouse(mm) annotations are supported
+  return.raw=TRUE #return the data used for plotting. 
+  #pdf.prefix="gbm.sc.stat" specify pdf.prefix if need to output to pdf
+)
+```
+
+```{r}
+head(sc.stat)
+```
+
+```{r}
+bk.stat <- plot.bulk.outlier(
+  bulk.input=as.matrix(t(bulk.matrix.before)),#make sure the colnames are gene symbol or ENSMEBL ID 
+    sc.input=sc.counts.matrix, #make sure the colnames are gene symbol or ENSMEBL ID 
+  cell.type.labels=celltype,
+  species="hs", #currently only human(hs) and mouse(mm) annotations are supported
+  return.raw=TRUE,
+  #pdf.prefix="gbm.bk.stat" specify pdf.prefix if need to output to pdf
+)
+
+head(bk.stat)
+```
+
+```{r}
+sc.dat.filtered <- cleanup.genes (input=sc.counts.matrix,
+                                  input.type="count.matrix",
+                                    species="hs", 
+                                    gene.group=c("Rb","Mrp","other_Rb") ,
+                                    exp.cells=5)
+
+```
+
+```{r}
+plot.bulk.vs.sc (sc.input = sc.dat.filtered,
+                            bulk.input = as.matrix(t(bulk.matrix.before)),
+                            pdf.prefix="READ" #specify pdf.prefix if need to output to pdf
+)
+```
+
+```{r}
+sc.dat.filtered.pc <-  select.gene.type (sc.dat.filtered,
+                                        gene.type = "protein_coding")
+```
+
+
+```{r}
+diff.exp.stat <- get.exp.stat(sc.dat=sc.counts.matrix[,colSums(sc.counts.matrix>0)>10],# filter genes to reduce memory use
+                                          cell.type.labels=celltype,
+                                          cell.state.labels=states,
+                                          psuedo.count=0.1, #a numeric value used for log2 transformation. =0.1 for 10x data, =10 for smart-seq. Default=0.1.
+                                          cell.count.cutoff=50, # a numeric value to exclude cell state with number of cells fewer than this value for t test. Default=50.
+                                          n.cores=1 #number of threads
+                                          )
+```
+
+```{r}
+sc.dat.filtered.pc.sig <- select.marker (sc.dat=sc.dat.filtered.pc,
+                                                  stat=diff.exp.stat,
+                                                  pval.max=0.01,
+                                                  lfc.min=0.1)
+```
+
+```{r}
+myPrism_read <- new.prism(
+  reference=sc.dat.filtered.pc.sig, 
+  mixture=as.matrix(t(bulk.matrix.before)),
+  input.type="count.matrix", 
+  cell.type.labels = celltype, 
+  cell.state.labels = states,
+  key="Malignant Cells",
+  outlier.cut=0.01,
+    outlier.fraction=0.1,
+)
+
+saveRDS(myPrism_read, "myPrism_read.rds")
+
+```
+
+
+## Melanoma
+
+```{r}
+bulk.matrix.before <- as.matrix(fread("mixtures/TCGA_SKCM_mixture.txt", header = TRUE, showProgress = TRUE), rownames = 1)
+bulk.matrix.before[1:5,1:5]
+dim(bulk.matrix.before)
+nams = rownames(bulk.matrix.before)
+rownames(bulk.matrix.before) = make.names(nams, unique=TRUE)
+bulk.matrix.before = as.data.frame(bulk.matrix.before)
+colnames(bulk.matrix.before) = gsub("\\.", "-", colnames(bulk.matrix.before))
+```
+
+```{r}
+mel <- readRDS("melanoma.rds")
+
+get.raw.data <- function(obj) Seurat::GetAssayData(object = obj, 
+                                                   slot = "counts")
+
+sc.counts.matrix <- base::as.matrix(t(get.raw.data(mel)))
+
+
+head(sc.counts.matrix[1:5,1:5])
+```
+
+
+```{r}
+celltype=mel$first_celltype2 
+states = mel$celltype
+rm(mel)
+plot.cor.phi (input=sc.counts.matrix, 
+                         input.labels=celltype, 
+                         title="cell type correlation",
+                         #specify pdf.prefix if need to output to pdf
+                         #pdf.prefix="gbm.cor.ct",
+                         cexRow=0.5, cexCol=0.5,
+                         )
+```
+```{r}
+plot.cor.phi (input=sc.counts.matrix, 
+                         input.labels=states, 
+                         title="cell type correlation",
+                         #specify pdf.prefix if need to output to pdf
+                         #pdf.prefix="gbm.cor.ct",
+                         cexRow=0.5, cexCol=0.5,
+                         )
+```
+
+
+```{r}
+sc.stat <- plot.scRNA.outlier(
+  input=sc.counts.matrix, #make sure the colnames are gene symbol or ENSMEBL ID 
+  cell.type.labels=celltype,
+  species="hs", #currently only human(hs) and mouse(mm) annotations are supported
+  return.raw=TRUE #return the data used for plotting. 
+  #pdf.prefix="gbm.sc.stat" specify pdf.prefix if need to output to pdf
+)
+```
+
+```{r}
+head(sc.stat)
+```
+
+```{r}
+bk.stat <- plot.bulk.outlier(
+  bulk.input=as.matrix(t(bulk.matrix.before)),#make sure the colnames are gene symbol or ENSMEBL ID 
+    sc.input=sc.counts.matrix, #make sure the colnames are gene symbol or ENSMEBL ID 
+  cell.type.labels=celltype,
+  species="hs", #currently only human(hs) and mouse(mm) annotations are supported
+  return.raw=TRUE,
+  #pdf.prefix="gbm.bk.stat" specify pdf.prefix if need to output to pdf
+)
+
+head(bk.stat)
+```
+
+```{r}
+sc.dat.filtered <- cleanup.genes (input=sc.counts.matrix,
+                                  input.type="count.matrix",
+                                    species="hs", 
+                                    gene.group=c("Rb","Mrp","other_Rb") ,
+                                    exp.cells=5)
+
+```
+
+```{r}
+plot.bulk.vs.sc (sc.input = sc.dat.filtered,
+                            bulk.input = as.matrix(t(bulk.matrix.before)),
+                            pdf.prefix="SKCM" #specify pdf.prefix if need to output to pdf
+)
+```
+
+
+```{r}
+sc.dat.filtered.pc <-  select.gene.type (sc.dat.filtered,
+                                        gene.type = "protein_coding")
+```
+
+
+```{r}
+diff.exp.stat <- get.exp.stat(sc.dat=sc.counts.matrix[,colSums(sc.counts.matrix>0)>5],
+                                          cell.type.labels=celltype,
+                                          cell.state.labels=states,
+                                          psuedo.count=10, #a numeric value used for log2 transformation. =0.1 for 10x data, =10 for smart-seq. Default=0.1.
+                                          cell.count.cutoff=50, # a numeric value to exclude cell state with number of cells fewer than this value for t test. Default=50.
+                                          n.cores=1 #number of threads
+                                          )
+```
+
+```{r}
+sc.dat.filtered.pc.sig <- select.marker (sc.dat=sc.dat.filtered.pc,
+                                                  stat=diff.exp.stat,
+                                                  pval.max=0.01,
+                                                  lfc.min=0.1)
+```
+
+```{r}
+myPrism_mel <- new.prism(
+  reference=sc.dat.filtered.pc.sig, 
+  mixture=as.matrix(t(bulk.matrix.before)),
+  input.type="count.matrix", 
+  cell.type.labels = celltype, 
+  cell.state.labels = states,
+  key="Malignant Cells",
+  outlier.cut=0.01,
+    outlier.fraction=0.1,
+)
+
+saveRDS(myPrism_mel, "myPrism_melanoma.rds")
+
+```
+
+# UVEAL Melanoma
+
+
+```{r}
+bulk.matrix.before <- as.matrix(fread("mixtures/TCGA_UVM_mixture.txt", header = TRUE, showProgress = TRUE), rownames = 1)
+bulk.matrix.before[1:5,1:5]
+dim(bulk.matrix.before)
+nams = rownames(bulk.matrix.before)
+rownames(bulk.matrix.before) = make.names(nams, unique=TRUE)
+bulk.matrix.before = as.data.frame(bulk.matrix.before)
+colnames(bulk.matrix.before) = gsub("\\.", "-", colnames(bulk.matrix.before))
+```
+
+```{r}
+uveal <- readRDS("uveal_melanoma.rds")
+
+get.raw.data <- function(obj) Seurat::GetAssayData(object = obj, 
+                                                   slot = "counts")
+
+sc.counts.matrix = get.raw.data(uveal)
+sc.counts.matrix = as(sc.counts.matrix, "dgTMatrix")
+#sc.counts.matrix = as.data.frame(sc.counts.matrix)
+sc.counts.matrix <- base::as.matrix(t(sc.counts.matrix))
+
+
+head(sc.counts.matrix[1:5,1:5])
+```
+
+
+```{r}
+celltype=uveal$first_celltype2 
+states = uveal$celltype
+rm(uveal)
+plot.cor.phi (input=sc.counts.matrix, 
+                         input.labels=celltype, 
+                         title="cell type correlation",
+                         #specify pdf.prefix if need to output to pdf
+                         #pdf.prefix="gbm.cor.ct",
+                         cexRow=0.5, cexCol=0.5,
+                         )
+```
+
+```{r}
+plot.cor.phi (input=sc.counts.matrix, 
+                         input.labels=states, 
+                         title="cell type correlation",
+                         #specify pdf.prefix if need to output to pdf
+                         #pdf.prefix="gbm.cor.ct",
+                         cexRow=0.5, cexCol=0.5,
+                         )
+```
+
+
+```{r}
+sc.stat <- plot.scRNA.outlier(
+  input=sc.counts.matrix, #make sure the colnames are gene symbol or ENSMEBL ID 
+  cell.type.labels=celltype,
+  species="hs", #currently only human(hs) and mouse(mm) annotations are supported
+  return.raw=TRUE #return the data used for plotting. 
+  #pdf.prefix="gbm.sc.stat" specify pdf.prefix if need to output to pdf
+)
+```
+
+```{r}
+head(sc.stat)
+```
+
+```{r}
+bk.stat <- plot.bulk.outlier(
+  bulk.input=as.matrix(t(bulk.matrix.before)),#make sure the colnames are gene symbol or ENSMEBL ID 
+    sc.input=sc.counts.matrix, #make sure the colnames are gene symbol or ENSMEBL ID 
+  cell.type.labels=celltype,
+  species="hs", #currently only human(hs) and mouse(mm) annotations are supported
+  return.raw=TRUE,
+  #pdf.prefix="gbm.bk.stat" specify pdf.prefix if need to output to pdf
+)
+
+head(bk.stat)
+```
+
+```{r}
+sc.dat.filtered <- cleanup.genes (input=sc.counts.matrix,
+                                  input.type="count.matrix",
+                                    species="hs", 
+                                    gene.group=c("Rb","Mrp","other_Rb","chrM") ,
+                                    exp.cells=5)
+
+```
+
+```{r}
+plot.bulk.vs.sc (sc.input = sc.dat.filtered,
+                            bulk.input = as.matrix(t(bulk.matrix.before)),
+                            pdf.prefix="UVEAL" #specify pdf.prefix if need to output to pdf
+)
+```
+
+```{r}
+sc.dat.filtered.pc <-  select.gene.type (sc.dat.filtered,
+                                        gene.type = "protein_coding")
+```
+
+
+```{r}
+diff.exp.stat <- get.exp.stat(sc.dat=sc.counts.matrix[,colSums(sc.counts.matrix>0)>10],# filter genes to reduce memory use
+                                          cell.type.labels=celltype,
+                                          cell.state.labels=states,
+                                          psuedo.count=0.1, #a numeric value used for log2 transformation. =0.1 for 10x data, =10 for smart-seq. Default=0.1.
+                                          cell.count.cutoff=50, # a numeric value to exclude cell state with number of cells fewer than this value for t test. Default=50.
+                                          n.cores=1 #number of threads
+                                          )
+```
+
+```{r}
+sc.dat.filtered.pc.sig <- select.marker (sc.dat=sc.dat.filtered.pc,
+                                                  stat=diff.exp.stat,
+                                                  pval.max=0.01,
+                                                  lfc.min=0.1)
+```
+
+```{r}
+myPrism_uveal <- new.prism(
+  reference=sc.dat.filtered.pc.sig, 
+  mixture=as.matrix(t(bulk.matrix.before)),
+  input.type="count.matrix", 
+  cell.type.labels = celltype, 
+  cell.state.labels = states,
+  key="Malignant Cells",
+  outlier.cut=0.01,
+    outlier.fraction=0.1,
+)
+
+saveRDS(myPrism_uveal, "myPrism_uveal.rds")
+
+```
+

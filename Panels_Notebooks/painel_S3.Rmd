@@ -1,0 +1,105 @@
+---
+title: "Figure S3 - cDC"
+output: html_notebook
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r library packages}
+suppressPackageStartupMessages({
+  library(Seurat)
+  library(dplyr)
+  library(ggplot2)
+  library(dittoSeq)
+  library(RColorBrewer)
+  library(gridExtra)
+  library(grid)
+  library(dittoSeq)
+  library(clusterProfiler)
+  library(ReactomePA)
+  library(AnnotationDbi)
+  library(Nebulosa)
+  library(EnsDb.Hsapiens.v86)
+  library(ggplotify)
+})
+```
+
+```{r fig.height=6, fig.width=9}
+bar_tema = list(
+  theme(
+    plot.title = element_text(size=0),
+    plot.subtitle = element_text(size=0),
+    axis.text.x = element_text(size = 20, angle=0, hjust = 0.5, color = 'black'),
+    axis.text.y = element_text(size = 20, color = 'black'),
+    axis.title.y = element_text(size = 20),
+    axis.title.x = element_text(size = 20),
+    legend.text = element_text(size = 20),
+    #legend.position="bottom"
+  ))
+
+dp_tema <- list(
+  theme(
+    plot.title = element_text(size = 12, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.text = element_text(size = 20, colour = 'black'),
+    axis.text.x = element_text(
+      angle = 90,
+      hjust = 1,
+      vjust = 0.5
+    ),
+    axis.title = element_text(size = 12),
+    legend.text = element_text(size = 20)
+  )
+)
+
+dc_pal <- rev(c('cDC2A_AREG' = "#45a4d5", 'cDC2_CXCL8' = "#91b0b9", 'cDC2_CD14' = "#2e525e", 'cDC2B_FCER1A' = "#beaac1", 'cDC1_CLEC9A' = "#477784", 'cDC2_CD207' = "#86638c", 'cDC2_FCGR3A' = "#cfa8d5", 'cDC_LAMP3' = "#a2c6ff"))
+dc_pal2 = rev(c('cDC2' = "#45a4d5", 'cDC1' = "#477784", 'cDC_Mig' = "#a2c6ff"))
+```
+
+```{r}
+load("/data/S3_figure.RData")
+```
+
+```{r}
+cdc$celltype2 <- cdc$celltype
+cdc$celltype2 <- gsub("cDC1_CLEC9A","cDC1", cdc$celltype2)
+cdc$celltype2 <- gsub("cDC2A_AREG|cDC2B_FCER1A|cDC2_CD207|cDC2_CD14|cDC2_FCGR3A|cDC2_CXCL8", "cDC2", cdc$celltype2)
+cdc$celltype2 <- gsub("cDC_LAMP3","cDC_Mig", cdc$celltype2)
+```
+
+```{r}
+p1 <- dittoBarPlot(cdc, group.by = "harm_sample.type", "celltype", scale = "count", color.panel = dc_pal, retain.factor.levels = T) + coord_flip() + bar_tema + xlab("")
+```
+
+```{r}
+cdc$condition2 <- factor(cdc$condition2, levels = c( 'blood', 'lymphnode', 'breast_N', 'breast_T', 'colorectal_N', 'colorectal_T', 'liver_T', 'lung_N', 'lung_T', 'lung_M', 'ovary_N', 'ovary_T', 'skin_N', 'melanoma_T', 'uvealmel_T', 'uvealmel_M'))
+p2 <- dittoBarPlot(cdc, group.by = "condition2", "celltype", scale = "percent", color.panel = dc_pal, retain.factor.levels = T) + coord_flip() + bar_tema + xlab("")
+```
+
+```{r}
+p3 <- dittoBarPlot(cdc, group.by = "condition2", "celltype", scale = "count", color.panel = dc_pal, retain.factor.levels = T) + coord_flip() + bar_tema + xlab("")
+```
+
+```{r}
+MK <- c('CD274', 'PDCD1LG2', 'CCR7', 'LAMP3')
+
+p4 = DotPlot(
+  cdc,
+  group.by = 'celltype',
+  features = MK,
+  col.min = 0.1, col.max = 1, dot.scale = 7,
+  cols = c('white', '#2e525e')
+) + theme(axis.text.x = element_text(angle = 45, hjust = 1))+ xlab("") + ylab("") + guides(color = guide_colorbar(title = "Scaled Average Expression")) + dp_tema
+
+```
+
+```{r fig.height=17.55, fig.width=17.55}
+panelS3a = cowplot::plot_grid(p1,p2, ncol=2, nrow=1, rel_widths = c(1,1), labels = c("a", "b"), label_size = 20)
+panelS3b = cowplot::plot_grid(p3,p4, ncol=2, nrow=1, rel_widths = c(1,1), labels = c("c", "d"), label_size = 20)
+
+panel_s3 = patchwork::wrap_plots(panelS3a, panelS3b, ncol = 1) + patchwork::plot_layout(heights = c(0.7,0.7))
+```
+
+```{r fig.height=10, fig.width=16}
+panel_s3
+```

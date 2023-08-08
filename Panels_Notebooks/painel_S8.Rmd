@@ -1,0 +1,145 @@
+---
+title: "Figure 04 - funcional signatures for mac"
+output: html_notebook
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r library packages}
+suppressPackageStartupMessages({
+  library(Seurat)
+  library(dplyr)
+  library(ggplot2)
+  library(dittoSeq)
+  library(RColorBrewer)
+  library(gridExtra)
+  library(grid)
+  library(ggpubr)
+  library(dittoSeq)
+  library(clusterProfiler)
+  library(ReactomePA)
+  library(AnnotationDbi)
+  library(EnsDb.Hsapiens.v86)
+  library(ggplotify)
+  library(caret)
+})
+```
+
+```{r}
+load("/data/S8_figure.RData")
+```
+
+```{r}
+macro_pal = c(
+  "Mac_Alv-like" = "#8B87FE",
+  "Mac_Angio" = "#DC4A82",
+  "Mac_Hypo" = "#FFA8DE",
+  "Mac_IFN" = "#6B6AF4",
+  "Mac_LA" = "#BD26DE",
+  "Mac_Prolif" = "#CFB8D9",
+  "Mac_Rec" = "#BF8FFF",
+  "Mac_AgPres" = "#00AEEE",
+  "RTM_IM" = "#1be19f",
+  "RTM_IFN" = "#a2db71",
+  "RTM_LA" = "#4ddfc8",
+  "RTM-like_MT" = "#579C99"
+)
+```
+
+```{r}
+create_violin_plot <- function(data, score, title) {
+  
+  # Reorder celltype based on score
+  order <- reorder(data$celltype, -data@meta.data[[score]])
+  data$celltype <- factor(data$celltype, levels = levels(order))
+  
+  # Create plot
+  p <- ggviolin(data@meta.data, x = "celltype", y = score, fill = "celltype",
+                palette = macro_pal,
+                add = "boxplot", add.params = list(fill = "white")) + 
+    stat_compare_means(label = "p.signif", method = "wilcox", ref.group = ".all.", hide.ns = FALSE, show.legend = FALSE) +
+    stat_compare_means(method = "kruskal.test", label.y = max(data@meta.data[[score]]) + 0.2, label.x = 1.5) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+    geom_hline(yintercept = mean(data@meta.data[[score]]), linetype = 2) +
+    NoLegend() +
+    ggtitle(title) +
+    ylab(paste0(title)) +
+    xlab("")
+  
+  return(p)
+}
+```
+
+M1/M2
+
+```{r}
+data$celltype <- Idents(data) %>% as.character()
+data$celltype <- ifelse(data$celltype == 'Mac_Reg', 'Mac_AgPres', data$celltype)
+Idents(data)= 'celltype'
+
+data <- AddModuleScore(data, features = list(m1$gene), name = "M1-score")
+data <- AddModuleScore(data, features = list(m2$gene), name = "M2-score")
+```
+
+```{r}
+p1 <- create_violin_plot(data = data, score = "M1.score1", title = "M1 Score")
+```
+
+```{r}
+p2 <- create_violin_plot(data = data, score = "M2.score1", title = "M2 Score")
+```
+
+Ratio M1/M2
+```{r fig.height=7, fig.width=7}
+set.seed(1024)
+mean_sig_clusters_m1 <- c()
+for (ident in levels(data@active.ident)) {
+  mean_sig_clusters_m1[ident] = mean(data@meta.data$M1.score1[which(rownames(data@meta.data) %in% WhichCells(data, ident = ident))])
+}
+
+# MEAN M2
+mean_sig_clusters_m2 <- c()
+for (ident in levels(data@active.ident)) {
+  mean_sig_clusters_m2[ident] = mean(data@meta.data$M2.score1[which(rownames(data@meta.data) %in%  WhichCells(data, ident = ident))])
+}
+
+mean_sig_clusters_m1 <- abs(as.data.frame(mean_sig_clusters_m1))
+mean_sig_clusters_m2 <- abs(as.data.frame(mean_sig_clusters_m2))
+
+# M1
+pp = preProcess(mean_sig_clusters_m1, method = "range")
+mean_sig_scaled_m1 = predict(pp, mean_sig_clusters_m1)
+
+# M2
+pp = preProcess(mean_sig_clusters_m2, method = "range")
+mean_sig_scaled_m2 = predict(pp, mean_sig_clusters_m2)
+
+# sum +1
+mean_sig_scaled_m1$mean_sig_clusters_m1 <- mean_sig_scaled_m1$mean_sig_clusters_m1 + 1
+
+mean_sig_scaled_m2$mean_sig_clusters_m2 <- mean_sig_scaled_m2$mean_sig_clusters_m2 + 1
+
+## ratio M1/M2
+mean_M1_M2 = data.frame(mean_sig_scaled_m1/mean_sig_scaled_m2)
+mean_M1_M2$ct = rownames(mean_M1_M2)
+names(mean_M1_M2) <- c("ratio", "celltype")
+
+p3 = ggplot(data=mean_M1_M2, aes(
+  x = reorder(celltype, -ratio), 
+  y=ratio, group=1)) + 
+  geom_point(colour = macro_pal, size = 5.5) + # shape = 1, stroke = 3
+  geom_hline(yintercept = 1, color = 'darksalmon', size = 6, alpha = 0.4) +  # faixa
+  geom_hline(aes(yintercept=1), color="bisque4", linetype=5) + # linha no 1
+  #geom_line(linetype = "dashed", color="bisque4")+ # conexao entre pontos
+  theme_classic()  +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, colour = 'black', size = 12), axis.text.y = element_text(colour = 'black', size = 12)) + ylab('Ratio M1/M2 Score') + xlab("")
+```
+
+```{r}
+panelS8 = cowplot::plot_grid(p1,p2,p3, ncol=3, nrow=1, rel_widths = c(1,1,1), heights = c(1), labels = c("a", "b", "c"), label_size = 20) 
+```
+
+```{r fig.height=5, fig.width=17}
+panelS8
+```
+

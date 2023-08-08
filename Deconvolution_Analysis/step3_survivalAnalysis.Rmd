@@ -1,0 +1,1520 @@
+---
+title: "Step3 -Survival Analysis"
+output: html_notebook
+---
+
+
+```{r}
+suppressPackageStartupMessages({
+  library(Seurat)
+  library(dplyr)
+  library(ggplot2)
+  library(survival)
+  library(survminer)
+  library(data.table)
+  library(BayesPrism)
+})
+setwd("/Path/")
+load("dadosSobrevida.RData")
+```
+
+```{r}
+theme_manuscript <- function(base_size=10, base_family="arial") {
+  library(grid)
+  (ggthemes::theme_foundation(base_size=base_size)
+    + theme(plot.title = element_text(hjust = 0.5,size = 10),
+            panel.background = element_rect(colour = NA),
+            plot.background = element_rect(colour = NA),
+            panel.border = element_rect(colour = NA),
+            axis.title.y = element_text(size = base_size), #angle=90
+            axis.title.x = element_text(size = base_size),
+            axis.text.x = element_text(),#angle = 90
+            axis.text = element_text(size = base_size), 
+            axis.line = element_line(colour="black"),
+            axis.ticks = element_line(),
+            panel.grid.major = element_line(colour="#f0f0f0"),
+            panel.grid.minor = element_blank(),
+            legend.key = element_rect(colour = NA),
+            legend.position = "bottom",
+            #legend.direction = "horizontal",
+            #legend.key.size= unit(0.5, "cm"),
+            #legend.spacing = unit(0, "cm"),
+            #strip.background=element_rect(colour="#f0f0f0",fill="#f0f0f0"),
+            strip.text = element_text(size=base_size)
+    ))
+}
+```
+
+
+# OVARY
+
+```{r}
+load("Prism_ovary.RData")
+
+ovary_prism <- as.data.frame(get.fraction (bp=bp.res.update,
+            which.theta = "first",
+            state.or.type="state"))
+
+rm(bp.res.update)
+```
+
+
+```{r}
+ovary_prism <- ovary_prism[grepl("-01A",rownames(ovary_prism)),]
+rownames(ovary_prism)  <- substr(rownames(ovary_prism),1,12)
+
+colnames(ovary_prism)[which(colnames(ovary_prism) %in% c("Mono_CD16"))] <-"Mono_FCG3RA"
+colnames(ovary_prism)[which(colnames(ovary_prism) %in% c("MonoInter_FOS-"))] <- "MonoInter_CXCL10"
+colnames(ovary_prism)[which(colnames(ovary_prism) %in% c("MonoInter_FOS+"))] <- "MonoInter_CLEC10A"
+
+Bayes_ovary <- ovary_prism
+Bayes_ovary1 <- Bayes_ovary
+for (i in 1:length(colnames(Bayes_ovary))) {
+  for (j in 1:5) {
+    quant <- quantile(Bayes_ovary1[,i])
+    Bayes_ovary[which(Bayes_ovary1[,i] > quant[j]),i] <- j
+  }
+}
+
+library(survival)
+library(survminer)
+
+Bayes_ovary$sample <- rownames(Bayes_ovary)
+
+library(dplyr)
+forest_data_Bayes <- left_join(Bayes_ovary,dados_sobrevida_pancancer[,c(1,25,26,3,4,31,32,35)], by= c("sample" = "bcr_patient_barcode"))
+forest_data_Bayes <- left_join(forest_data_Bayes,subtipos[,c(1,3)], by= c("sample" = "pan.samplesID"))
+forest_data_Bayes$Subtype_mRNA = forest_data_Bayes$Subtype_mRNA %>% as.factor()
+forest_data_Bayes$Stage=forest_data_Bayes$Stage %>% as.factor()
+
+colnames(forest_data_Bayes)[42] = "Age"
+
+```
+
+```{r}
+surv_object <- Surv(time = forest_data_Bayes$OS.time, event = forest_data_Bayes$OS)
+colnames(forest_data_Bayes)[28] = "RTM_like_MT"
+colnames(forest_data_Bayes)[38] = "Mono_CD14_FOSpos"
+
+covariables <- colnames(forest_data_Bayes)[c(1:38,42,46:47)]
+
+univ_formulas_Bayes <- sapply(covariables,
+                        function(x) as.formula(paste('surv_object ~', x)))
+
+univ_models_Bayes =  lapply(univ_formulas_Bayes, function(x){coxph(x, data = forest_data_Bayes)}) 
+
+univ_results_Bayes <- lapply(univ_models_Bayes,
+                       function(x){ 
+                         x <- summary(x)
+                         p.value<-signif(x$wald["pvalue"], digits=2)
+                         wald.test<-signif(x$wald["test"], digits=2)
+                         beta<-signif(x$coef[1], digits=2);#coeficient beta
+                         HR <-signif(x$coef[2], digits=2);#exp(beta)
+                         HR.confint.lower <- signif(x$conf.int[,"lower .95"], 2)
+                         HR.confint.upper <- signif(x$conf.int[,"upper .95"],2)
+                         HR <- paste0(HR, " (", 
+                                      HR.confint.lower, "-", HR.confint.upper, ")")
+                         res<-c(beta, HR, wald.test, p.value)
+                         names(res)<-c("beta", "HR (95% CI for HR)", "wald.test", 
+                                       "p.value")
+                         return(res)
+                         #return(exp(cbind(coef(x),confint(x))))
+                       })
+
+#res.Bayes <- t(as.data.frame(univ_results_Bayes, check.names = FALSE))
+res.Bayes= as.data.frame(t(do.call(cbind, univ_results_Bayes)))
+res.Bayes <- as.data.frame(res.Bayes)
+res.Bayes$p.value <- as.character(res.Bayes$p.value)
+res.Bayes$p.value <- as.numeric(res.Bayes$p.value)
+res.Bayes_filt <- res.Bayes[which(res.Bayes$p.value <= 0.05),]
+
+res.Bayes_filt
+```
+
+```{r}
+ovary.univ = res.Bayes
+ovary.univ[40,4] <- 0.1421
+ovary.univ[41,4] <- 0.0675
+```
+
+```{r fig.height=2, fig.width=5}
+rownames(res.Bayes_filt) 
+
+f1 <- as.formula(paste("Surv(time = forest_data_Bayes$OS.time, event = forest_data_Bayes$OS) ~ ",
+                       paste(c(rownames(res.Bayes_filt)), collapse= "+")))
+
+fit.coxph <- coxph(f1, data = forest_data_Bayes)
+summary(fit.coxph)
+
+ggforest(fit.coxph, data = forest_data_Bayes, main = "Hazard Ratio - Ovary")
+```
+
+```{r}
+lrm   <- summary(fit.coxph)
+  if (dim(lrm$coefficients)[1]>1){
+    pval       <- signif(lrm$coefficients[,"Pr(>|z|)"], digits = 2)
+    hazard.ratio <- signif(lrm$coefficients[,"exp(coef)"], digits = 2)
+    conf       <- suppressMessages(confint(fit.coxph))
+    ci.low     <- signif(lrm$conf.int[,"lower .95"], digits = 2)
+    ci.hi      <- signif(lrm$conf.int[,"upper .95"], digits = 2)
+    md <- data.frame(pval,hazard.ratio,ci.low,ci.hi)
+  }
+md
+
+ovary_multi = as.data.frame(md)
+names(ovary_multi)[2] <- "OV"
+```
+
+
+
+# Breast
+
+
+```{r}
+load("Prism_breast.RData")
+
+breast_prism <- as.data.frame(get.fraction (bp=bp.res.update,
+            which.theta = "first",
+            state.or.type="state"))
+
+rm(bp.res.update)
+
+colnames(breast_prism)[which(colnames(breast_prism) %in% c("Mono_CD16"))] <-"Mono_FCG3RA"
+colnames(breast_prism)[which(colnames(breast_prism) %in% c("MonoInter_FOS-"))] <- "MonoInter_CXCL10"
+colnames(breast_prism)[which(colnames(breast_prism) %in% c("MonoInter_FOS+"))] <- "MonoInter_CLEC10A"
+
+```
+
+```{r}
+breast_prism <- breast_prism[grepl("-01A",rownames(breast_prism)),]
+sample=rownames(breast_prism)
+sample  <- substr(sample,1,12)
+sample= make.names(sample, unique=TRUE)
+rownames(breast_prism)  <- sample
+rownames(breast_prism) = gsub("\\.", "-", rownames(breast_prism))
+rm(sample)
+
+Bayes_breast <- breast_prism
+Bayes_breast1 <- breast_prism
+for (i in 1:length(colnames(Bayes_breast))) {
+  for (j in 1:5) {
+    quant <- quantile(Bayes_breast1[,i])
+    Bayes_breast[which(Bayes_breast1[,i] > quant[j]),i] <- j
+  }
+}
+
+rownames(Bayes_breast) = gsub("\\.", "-", rownames(Bayes_breast))
+
+
+Bayes_breast$sample <- rownames(Bayes_breast)
+
+
+forest_data_Bayes <- left_join(Bayes_breast,dados_sobrevida_pancancer[,c(1,25,26,3,4,35)], by= c("sample" = "bcr_patient_barcode"))
+#subtipos = subtipos[which(subtipos$Subtype_mRNA %in% c("LumB", "LumA", "Her2", "Basal")),]
+forest_data_Bayes <- left_join(forest_data_Bayes,subtipos[,c(1,3)], by= c("sample" = "pan.samplesID"))
+forest_data_Bayes$Subtype_mRNA = forest_data_Bayes$Subtype_mRNA %>% as.factor()
+forest_data_Bayes$Stage=forest_data_Bayes$Stage %>% as.factor()
+forest_data_Bayes$gender=forest_data_Bayes$gender %>% as.factor()
+
+colnames(forest_data_Bayes)[45] = "Age"
+
+```
+
+
+
+```{r fig.height=2, fig.width=5}
+########### Luminal B
+colnames(forest_data_Bayes)[23] = "Mono_CD14_FOSpos"
+colnames(forest_data_Bayes)[36] = "Mac_Alv_like"
+
+forest_data_lumB <- forest_data_Bayes[which(forest_data_Bayes$Subtype_mRNA == "LumB"),]
+forest_data_lumB <- forest_data_lumB[!duplicated(forest_data_lumB$sample),]
+#forest_data_lumB$Subtype_mRNA=forest_data_lumB$Subtype_mRNA %>% as.character()
+
+
+
+covariables <- colnames(forest_data_lumB)[c(1:41,45:47)]
+
+surv_object <- Surv(time = forest_data_lumB$OS.time, event = forest_data_lumB$OS)
+
+univ_formulas_Bayes <- sapply(covariables,
+                        function(x) as.formula(paste('surv_object ~', x)))
+
+univ_models <- lapply(univ_formulas_Bayes, function(x){coxph(x, data = forest_data_lumB)})
+
+univ_results <- lapply(univ_models,
+                       function(x){ 
+                         x <- summary(x)
+                         p.value<-signif(x$wald["pvalue"], digits=2)
+                         wald.test<-signif(x$wald["test"], digits=2)
+                         beta<-signif(x$coef[1], digits=2);#coeficient beta
+                         HR <-signif(x$coef[2], digits=2);#exp(beta)
+                         HR.confint.lower <- signif(x$conf.int[,"lower .95"], 2)
+                         HR.confint.upper <- signif(x$conf.int[,"upper .95"],2)
+                         HR <- paste0(HR, " (", 
+                                      HR.confint.lower, "-", HR.confint.upper, ")")
+                         res<-c(beta, HR, wald.test, p.value)
+                         names(res)<-c("beta", "HR (95% CI for HR)", "wald.test", 
+                                       "p.value")
+                         return(res)
+                         #return(exp(cbind(coef(x),confint(x))))
+                       })
+res= as.data.frame(t(do.call(cbind, univ_results)))
+#res <- as.data.frame(univ_results, check.names = F)
+#res <- as.data.frame(res)
+res$p.value <- as.character(res$p.value)
+res$p.value <- as.numeric(res$p.value)
+res_filt <- res[which(res$p.value <= 0.05),]
+
+rownames(res_filt)
+
+f1 <- as.formula(paste("Surv(time = forest_data_lumB$OS.time, event = forest_data_lumB$OS) ~ ",
+                       paste(c(rownames(res_filt), "Stage"), collapse= "+")))
+
+fit.coxph <- coxph(f1, data = forest_data_lumB)
+summary(fit.coxph)
+
+ggforest(fit.coxph, data = forest_data_lumB, main = "Hazard Ratio: BRCA-Luminal B")
+```
+
+```{r}
+univ_models$Stage
+LumB = res
+LumB[44,4] <- 0.01859
+```
+
+```{r}
+lrm   <- summary(fit.coxph)
+  if (dim(lrm$coefficients)[1]>1){
+    pval       <- signif(lrm$coefficients[,"Pr(>|z|)"], digits = 2)
+    hazard.ratio <- signif(lrm$coefficients[,"exp(coef)"], digits = 2)
+    conf       <- suppressMessages(confint(fit.coxph))
+    ci.low     <- signif(lrm$conf.int[,"lower .95"], digits = 2)
+    ci.hi      <- signif(lrm$conf.int[,"upper .95"], digits = 2)
+    md <- data.frame(pval,hazard.ratio,ci.low,ci.hi)
+  }
+md
+
+LumB_multi = as.data.frame(md)
+names(LumB_multi)[2] <- "BRCA_LumB"
+```
+
+
+```{r fig.height=2.5, fig.width=5}
+########### Luminal A
+forest_data_lumA <- forest_data_Bayes[which(forest_data_Bayes$Subtype_mRNA == "LumA"),]
+forest_data_lumA$Subtype_mRNA=forest_data_lumA$Subtype_mRNA %>% as.character()
+
+covariables <- colnames(forest_data_lumA)[c(1:41,45:47)]
+
+surv_object <- Surv(time = forest_data_lumA$OS.time, event = forest_data_lumA$OS)
+
+univ_formulas_Bayes <- sapply(covariables,
+                        function(x) as.formula(paste('surv_object ~', x)))
+
+univ_models <- lapply(univ_formulas_Bayes, function(x){coxph(x, data = forest_data_lumA)})
+
+univ_results <- lapply(univ_models,
+                       function(x){ 
+                         x <- summary(x)
+                         p.value<-signif(x$wald["pvalue"], digits=2)
+                         wald.test<-signif(x$wald["test"], digits=2)
+                         beta<-signif(x$coef[1], digits=2);#coeficient beta
+                         HR <-signif(x$coef[2], digits=2);#exp(beta)
+                         HR.confint.lower <- signif(x$conf.int[,"lower .95"], 2)
+                         HR.confint.upper <- signif(x$conf.int[,"upper .95"],2)
+                         HR <- paste0(HR, " (", 
+                                      HR.confint.lower, "-", HR.confint.upper, ")")
+                         res<-c(beta, HR, wald.test, p.value)
+                         names(res)<-c("beta", "HR (95% CI for HR)", "wald.test", 
+                                       "p.value")
+                         return(res)
+                         #return(exp(cbind(coef(x),confint(x))))
+                       })
+res= as.data.frame(t(do.call(cbind, univ_results)))
+#res <- as.data.frame(univ_results, check.names = F)
+#res <- as.data.frame(res)
+res$p.value <- as.character(res$p.value)
+res$p.value <- as.numeric(res$p.value)
+res_filt <- res[which(res$p.value <= 0.05),]
+
+rownames(res_filt)
+
+f1 <- as.formula(paste("Surv(time = forest_data_lumA$OS.time, event = forest_data_lumA$OS) ~ ",
+                       paste(c(rownames(res_filt), "Stage"), collapse= "+")))
+
+fit.coxph <- coxph(f1, data = forest_data_lumA)
+summary(fit.coxph)
+
+ggforest(fit.coxph, data = forest_data_lumA, main = "Hazard Ratio: BRCA-Luminal A")
+```
+
+```{r}
+univ_models$Stage
+LumA = res
+LumA[44,4] <- 0.02363
+```
+
+```{r}
+lrm   <- summary(fit.coxph)
+  if (dim(lrm$coefficients)[1]>1){
+    pval       <- signif(lrm$coefficients[,"Pr(>|z|)"], digits = 2)
+    hazard.ratio <- signif(lrm$coefficients[,"exp(coef)"], digits = 2)
+    conf       <- suppressMessages(confint(fit.coxph))
+    ci.low     <- signif(lrm$conf.int[,"lower .95"], digits = 2)
+    ci.hi      <- signif(lrm$conf.int[,"upper .95"], digits = 2)
+    md <- data.frame(pval,hazard.ratio,ci.low,ci.hi)
+  }
+md
+
+LumA_multi = as.data.frame(md)
+names(LumA_multi)[2] <- "BRCA_LumA"
+
+
+```
+
+
+```{r fig.height=2.5, fig.width=5}
+########### HER2
+forest_data_her2 <- forest_data_Bayes[which(forest_data_Bayes$Subtype_mRNA == "Her2"),]
+forest_data_her2$Subtype_mRNA=forest_data_her2$Subtype_mRNA %>% as.character()
+
+covariables <- colnames(forest_data_her2)[c(1:41,45:47)]
+
+surv_object <- Surv(time = forest_data_her2$OS.time, event = forest_data_her2$OS)
+
+univ_formulas_Bayes <- sapply(covariables,
+                        function(x) as.formula(paste('surv_object ~', x)))
+
+univ_models <- lapply(univ_formulas_Bayes, function(x){coxph(x, data = forest_data_her2)})
+
+univ_results <- lapply(univ_models,
+                       function(x){ 
+                         x <- summary(x)
+                         p.value<-signif(x$wald["pvalue"], digits=2)
+                         wald.test<-signif(x$wald["test"], digits=2)
+                         beta<-signif(x$coef[1], digits=2);#coeficient beta
+                         HR <-signif(x$coef[2], digits=2);#exp(beta)
+                         HR.confint.lower <- signif(x$conf.int[,"lower .95"], 2)
+                         HR.confint.upper <- signif(x$conf.int[,"upper .95"],2)
+                         HR <- paste0(HR, " (", 
+                                      HR.confint.lower, "-", HR.confint.upper, ")")
+                         res<-c(beta, HR, wald.test, p.value)
+                         names(res)<-c("beta", "HR (95% CI for HR)", "wald.test", 
+                                       "p.value")
+                         return(res)
+                         #return(exp(cbind(coef(x),confint(x))))
+                       })
+res= as.data.frame(t(do.call(cbind, univ_results)))
+#res <- as.data.frame(univ_results, check.names = F)
+#res <- as.data.frame(res)
+res$p.value <- as.character(res$p.value)
+res$p.value <- as.numeric(res$p.value)
+res_filt <- res[which(res$p.value <= 0.05),]
+
+res_filt
+
+rownames(res_filt)
+
+
+
+f1 <- as.formula(paste("Surv(time = forest_data_her2$OS.time, event = forest_data_her2$OS) ~ ",
+                       paste(c(rownames(res_filt), "Stage"), collapse= "+")))
+
+fit.coxph <- coxph(f1, data = forest_data_her2)
+summary(fit.coxph)
+
+surv_HER2=ggforest(fit.coxph, data = forest_data_her2, main = "Hazard Ratio: BRCA-HER2")
+#ggsave("~/rstudio_server/figures/HR_her2.svg", units="in", width=5, height=8, dpi=3000)
+```
+
+```{r}
+univ_models$Stage
+HER2 = res
+HER2[44,4] <-0.0026
+```
+
+```{r}
+lrm   <- summary(fit.coxph)
+  if (dim(lrm$coefficients)[1]>1){
+    pval       <- signif(lrm$coefficients[,"Pr(>|z|)"], digits = 2)
+    hazard.ratio <- signif(lrm$coefficients[,"exp(coef)"], digits = 2)
+    conf       <- suppressMessages(confint(fit.coxph))
+    ci.low     <- signif(lrm$conf.int[,"lower .95"], digits = 2)
+    ci.hi      <- signif(lrm$conf.int[,"upper .95"], digits = 2)
+    md <- data.frame(pval,hazard.ratio,ci.low,ci.hi)
+  }
+md
+
+HER2_multi = as.data.frame(md)
+names(HER2_multi)[2] <- "BRCA_HER2"
+```
+
+```{r}
+########### BASAL
+forest_data_Basal <- forest_data_Bayes[which(forest_data_Bayes$Subtype_mRNA == "Basal"),]
+#forest_data_Basal$Subtype_mRNA=forest_data_Basal$Subtype_mRNA %>% as.character()
+#forest_data_Basal$Subtype_mRNA=forest_data_Basal$Subtype_mRNA %>% as.character()
+
+covariables <- colnames(forest_data_Basal)[c(1:41,45:47)]
+
+surv_object <- Surv(time = forest_data_Basal$OS.time, event = forest_data_Basal$OS)
+
+univ_formulas_Bayes <- sapply(covariables,
+                        function(x) as.formula(paste('surv_object ~', x)))
+
+univ_models <- lapply(univ_formulas_Bayes, function(x){coxph(x, data = forest_data_Basal)})
+
+univ_results <- lapply(univ_models,
+                       function(x){ 
+                         x <- summary(x)
+                         p.value<-signif(x$wald["pvalue"], digits=2)
+                         wald.test<-signif(x$wald["test"], digits=2)
+                         beta<-signif(x$coef[1], digits=2);#coeficient beta
+                         HR <-signif(x$coef[2], digits=2);#exp(beta)
+                         HR.confint.lower <- signif(x$conf.int[,"lower .95"], 2)
+                         HR.confint.upper <- signif(x$conf.int[,"upper .95"],2)
+                         HR <- paste0(HR, " (", 
+                                      HR.confint.lower, "-", HR.confint.upper, ")")
+                         res<-c(beta, HR, wald.test, p.value)
+                         names(res)<-c("beta", "HR (95% CI for HR)", "wald.test", 
+                                       "p.value")
+                         return(res)
+                         #return(exp(cbind(coef(x),confint(x))))
+                       })
+res= as.data.frame(t(do.call(cbind, univ_results)))
+#res <- as.data.frame(univ_results, check.names = F)
+#res <- as.data.frame(res)
+res$p.value <- as.character(res$p.value)
+res$p.value <- as.numeric(res$p.value)
+res_filt <- res[which(res$p.value <= 0.05),]
+
+res_filt
+
+Basal = res
+
+rownames(res_filt)
+
+f1 <- as.formula(paste("Surv(time = forest_data_Basal$OS.time, event = forest_data_Basal$OS) ~ ",
+                       paste(c(rownames(res_filt), "Stage"), collapse= "+")))
+
+fit.coxph <- coxph(f1, data = forest_data_Basal)
+summary(fit.coxph)
+
+```
+
+
+```{r}
+univ_models$Stage
+Basal = res
+Basal[44,4] <-8.925e-06
+```
+
+```{r}
+lrm   <- summary(fit.coxph)
+  if (dim(lrm$coefficients)[1]>1){
+    pval       <- signif(lrm$coefficients[,"Pr(>|z|)"], digits = 2)
+    hazard.ratio <- signif(lrm$coefficients[,"exp(coef)"], digits = 2)
+    conf       <- suppressMessages(confint(fit.coxph))
+    ci.low     <- signif(lrm$conf.int[,"lower .95"], digits = 2)
+    ci.hi      <- signif(lrm$conf.int[,"upper .95"], digits = 2)
+    md <- data.frame(pval,hazard.ratio,ci.low,ci.hi)
+  }
+md
+
+Basal_multi = as.data.frame(md)
+names(Basal_multi)[2] <- "BRCA_Basal"
+
+```
+
+
+#LUAD
+
+```{r}
+load("Prism_luad.RData")
+
+luad_prism <- as.data.frame(get.fraction (bp=bp.res.update,
+            which.theta = "first",
+            state.or.type="state"))
+
+rm(bp.res.update)
+
+colnames(luad_prism)[which(colnames(luad_prism) %in% c("Mono_CD16"))] <-"Mono_FCG3RA"
+colnames(luad_prism)[which(colnames(luad_prism) %in% c("MonoInter_FOS-"))] <- "MonoInter_CXCL10"
+colnames(luad_prism)[which(colnames(luad_prism) %in% c("MonoInter_FOS+"))] <- "MonoInter_CLEC10A"
+```
+
+```{r}
+luad_prism <- luad_prism %>% t() %>% as.data.frame()
+colnames(luad_prism) = gsub("\\.", "-", colnames(luad_prism))
+#luad_prism$`TCGA-21-1076-01A-02R-0692-07` <- NULL
+luad_prism <-luad_prism[,grepl("-01A",colnames(luad_prism))]
+colnames(luad_prism) <- substr(colnames(luad_prism),1,20)
+luad_prism <- luad_prism[!duplicated(colnames(luad_prism))]
+colnames(luad_prism) <- substr(colnames(luad_prism),1,12)
+
+luad_prism <- luad_prism %>% t() %>% as.data.frame()
+#colnames(luad_prism) = gsub("\\.", "-", colnames(luad_prism))
+
+Bayes_LUAD <- luad_prism
+Bayes_LUAD1 <- Bayes_LUAD
+for (i in 1:length(colnames(Bayes_LUAD))) {
+  for (j in 1:5) {
+    quant <- quantile(Bayes_LUAD1[,i])
+    Bayes_LUAD[which(Bayes_LUAD1[,i] > quant[j]),i] <- j
+  }
+}
+
+#rownames(Bayes_LUSC) = gsub("\\.", "-", rownames(Bayes_LUSC))
+
+library(survival)
+library(survminer)
+
+
+
+Bayes_LUAD$sample <- rownames(Bayes_LUAD)
+
+library(dplyr)
+forest_data_Bayes <- left_join(Bayes_LUAD,dados_sobrevida_pancancer[,c(1,25,26,3,4,35)], by= c("sample" = "bcr_patient_barcode"))
+forest_data_Bayes$gender = forest_data_Bayes$gender %>% as.factor()
+forest_data_Bayes$Stage = forest_data_Bayes$Stage %>% as.factor()
+names(forest_data_Bayes)[47] = "Age"
+
+
+```
+
+
+```{r fig.height=2.5, fig.width=5}
+surv_object <- Surv(time = forest_data_Bayes$OS.time, event = forest_data_Bayes$OS)
+colnames(forest_data_Bayes)[34] = "Mono_CD14_FOSneg"
+colnames(forest_data_Bayes)[23] = "RTM_like_MT"
+colnames(forest_data_Bayes)[15] = "Mac_Alv_like"
+
+covariables <- colnames(forest_data_Bayes)[c(1:43,47:49)]
+
+
+
+univ_formulas_Bayes <- sapply(covariables,
+                        function(x) as.formula(paste('surv_object ~', x)))
+
+univ_models_Bayes <- lapply(univ_formulas_Bayes, function(x){coxph(x, data = forest_data_Bayes)})
+
+univ_results_Bayes <- lapply(univ_models_Bayes,
+                       function(x){ 
+                         x <- summary(x)
+                         p.value<-signif(x$wald["pvalue"], digits=2)
+                         wald.test<-signif(x$wald["test"], digits=2)
+                         beta<-signif(x$coef[1], digits=2);#coeficient beta
+                         HR <-signif(x$coef[2], digits=2);#exp(beta)
+                         HR.confint.lower <- signif(x$conf.int[,"lower .95"], 2)
+                         HR.confint.upper <- signif(x$conf.int[,"upper .95"],2)
+                         HR <- paste0(HR, " (", 
+                                      HR.confint.lower, "-", HR.confint.upper, ")")
+                         res<-c(beta, HR, wald.test, p.value)
+                         names(res)<-c("beta", "HR (95% CI for HR)", "wald.test", 
+                                       "p.value")
+                         return(res)
+                         #return(exp(cbind(coef(x),confint(x))))
+                       })
+
+#res.Bayes <- t(as.data.frame(univ_results_Bayes, check.names = FALSE))
+res.Bayes = as.data.frame(t(do.call(cbind, univ_results_Bayes)))
+res.Bayes <- as.data.frame(res.Bayes)
+res.Bayes$p.value <- as.character(res.Bayes$p.value)
+res.Bayes$p.value <- as.numeric(res.Bayes$p.value)
+res.Bayes_filt <- res.Bayes[which(res.Bayes$p.value <= 0.05),]
+
+res.Bayes_filt
+
+rownames(res.Bayes_filt)
+
+f1 <- as.formula(paste("Surv(forest_data_Bayes$OS.time, event = forest_data_Bayes$OS) ~ ",
+                       paste(c(rownames(res.Bayes_filt), "Stage"), collapse= "+")))
+
+fit.coxph <- coxph(f1, data = forest_data_Bayes)
+summary(fit.coxph)
+
+ggforest(fit.coxph, data = forest_data_Bayes, main = "Hazard Ratio - LUAD")
+```
+
+```{r}
+univ_models_Bayes$Stage
+luad = res.Bayes
+luad[46,4] <- 1.822e-11
+```
+
+```{r}
+lrm   <- summary(fit.coxph)
+  if (dim(lrm$coefficients)[1]>1){
+    pval       <- signif(lrm$coefficients[,"Pr(>|z|)"], digits = 2)
+    hazard.ratio <- signif(lrm$coefficients[,"exp(coef)"], digits = 2)
+    conf       <- suppressMessages(confint(fit.coxph))
+    ci.low     <- signif(lrm$conf.int[,"lower .95"], digits = 2)
+    ci.hi      <- signif(lrm$conf.int[,"upper .95"], digits = 2)
+    md <- data.frame(pval,hazard.ratio,ci.low,ci.hi)
+  }
+md
+
+luad_multi = as.data.frame(md)
+names(luad_multi)[2] <- "LUAD"
+```
+
+
+#LUSC
+
+```{r}
+load("Prism_lusc.RData")
+
+lusc_prism <- as.data.frame(get.fraction (bp=bp.res.update,
+            which.theta = "first",
+            state.or.type="state"))
+
+rm(bp.res.update)
+
+colnames(lusc_prism)[which(colnames(lusc_prism) %in% c("Mono_CD16"))] <-"Mono_FCG3RA"
+colnames(lusc_prism)[which(colnames(lusc_prism) %in% c("MonoInter_FOS-"))] <- "MonoInter_CXCL10"
+colnames(lusc_prism)[which(colnames(lusc_prism) %in% c("MonoInter_FOS+"))] <- "MonoInter_CLEC10A"
+```
+
+```{r}
+lusc_prism=as.data.frame(lusc_prism)
+rownames(lusc_prism) = gsub("\\.", "-", rownames(lusc_prism))
+
+lusc_prism <- lusc_prism %>% t() %>% as.data.frame()
+lusc_prism$`TCGA-21-1076-01A-02R-0692-07` <- NULL
+
+lusc_prism <-lusc_prism[,grepl("-01A",colnames(lusc_prism))]
+colnames(lusc_prism)  <- substr(colnames(lusc_prism),1,12)
+lusc_prism <- lusc_prism %>% t() %>% as.data.frame()
+Bayes_LUSC <- lusc_prism
+
+Bayes_LUSC1 <- Bayes_LUSC
+for (i in 1:length(colnames(Bayes_LUSC))) {
+  for (j in 1:5) {
+    quant <- quantile(Bayes_LUSC1[,i])
+    Bayes_LUSC[which(Bayes_LUSC1[,i] > quant[j]),i] <- j
+  }
+}
+
+#rownames(Bayes_LUSC) = gsub("\\.", "-", rownames(Bayes_LUSC))
+
+library(survival)
+library(survminer)
+
+
+
+Bayes_LUSC$sample <- rownames(Bayes_LUSC)
+
+library(dplyr)
+forest_data_Bayes <- left_join(Bayes_LUSC,dados_sobrevida_pancancer[,c(1,25,26,35,3,4)], by= c("sample" = "bcr_patient_barcode"))
+forest_data_Bayes$gender = forest_data_Bayes$gender %>% as.factor()
+forest_data_Bayes$Stage = forest_data_Bayes$Stage %>% as.factor()
+names(forest_data_Bayes)[48]="Age"
+
+```
+
+```{r}
+surv_object <- Surv(time = forest_data_Bayes$OS.time, event = forest_data_Bayes$OS)
+colnames(forest_data_Bayes)[32] = "RTM_like_MT"
+colnames(forest_data_Bayes)[33] = "Mac_Alv_like"
+colnames(forest_data_Bayes)[4] = "Mono_CD14_FOSneg"
+
+
+covariables <- colnames(forest_data_Bayes)[c(1:43,47:49)]
+univ_formulas_Bayes <- sapply(covariables,
+                        function(x) as.formula(paste('surv_object ~', x)))
+
+univ_models_Bayes <- lapply(univ_formulas_Bayes, function(x){coxph(x, data = forest_data_Bayes)})
+
+univ_results_Bayes <- lapply(univ_models_Bayes,
+                       function(x){ 
+                         x <- summary(x)
+                         p.value<-signif(x$wald["pvalue"], digits=2)
+                         wald.test<-signif(x$wald["test"], digits=2)
+                         beta<-signif(x$coef[1], digits=2);#coeficient beta
+                         HR <-signif(x$coef[2], digits=2);#exp(beta)
+                         HR.confint.lower <- signif(x$conf.int[,"lower .95"], 2)
+                         HR.confint.upper <- signif(x$conf.int[,"upper .95"],2)
+                         HR <- paste0(HR, " (", 
+                                      HR.confint.lower, "-", HR.confint.upper, ")")
+                         res<-c(beta, HR, wald.test, p.value)
+                         names(res)<-c("beta", "HR (95% CI for HR)", "wald.test", 
+                                       "p.value")
+                         return(res)
+                         #return(exp(cbind(coef(x),confint(x))))
+                       })
+
+#res.Bayes <- t(as.data.frame(univ_results_Bayes, check.names = FALSE))
+res.Bayes = as.data.frame(t(do.call(cbind, univ_results_Bayes)))
+res.Bayes <- as.data.frame(res.Bayes)
+res.Bayes$p.value <- as.character(res.Bayes$p.value)
+res.Bayes$p.value <- as.numeric(res.Bayes$p.value)
+res.Bayes_filt <- res.Bayes[which(res.Bayes$p.value <= 0.05),]
+
+res.Bayes_filt
+
+lusc = res.Bayes
+
+
+```
+
+```{r}
+univ_models_Bayes$Stage
+lusc = res.Bayes
+lusc[44,4] <- 0.007092
+```
+
+
+```{r fig.height=2.5, fig.width=5}
+f1 <- as.formula(paste("Surv(time = forest_data_Bayes$OS.time, event = forest_data_Bayes$OS) ~ ",
+                       paste(c(rownames(res.Bayes_filt), "Stage"), collapse= "+")))
+ 
+ fit.coxph <- coxph(f1, data = forest_data_Bayes)
+ summary(fit.coxph)
+ 
+ggforest(fit.coxph, data = forest_data_Bayes, main = "Hazard Ratio - LUSC")
+```
+
+```{r}
+lrm   <- summary(fit.coxph)
+  if (dim(lrm$coefficients)[1]>1){
+    pval       <- signif(lrm$coefficients[,"Pr(>|z|)"], digits = 2)
+    hazard.ratio <- signif(lrm$coefficients[,"exp(coef)"], digits = 2)
+    conf       <- suppressMessages(confint(fit.coxph))
+    ci.low     <- signif(lrm$conf.int[,"lower .95"], digits = 2)
+    ci.hi      <- signif(lrm$conf.int[,"upper .95"], digits = 2)
+    md <- data.frame(pval,hazard.ratio,ci.low,ci.hi)
+  }
+md
+
+lusc_multi = as.data.frame(md)
+names(lusc_multi)[2] <- "LUSC"
+```
+
+
+#LIVER
+
+```{r}
+load("Prism_liver.RData")
+
+liver_prism <- as.data.frame(get.fraction (bp=bp.res.update,
+            which.theta = "first",
+            state.or.type="state"))
+
+colnames(liver_prism)[which(colnames(liver_prism) %in% c("Mono_CD16"))] <-"Mono_FCG3RA"
+colnames(liver_prism)[which(colnames(liver_prism) %in% c("MonoInter_FOS-"))] <- "MonoInter_CXCL10"
+colnames(liver_prism)[which(colnames(liver_prism) %in% c("MonoInter_FOS+"))] <- "MonoInter_CLEC10A"
+
+rm(bp.res.update)
+```
+
+```{r}
+liver_prism <- liver_prism %>% t() %>% as.data.frame()
+colnames(liver_prism) = gsub("\\.", "-", colnames(liver_prism))
+liver_prism <-liver_prism[,grepl("-01A",colnames(liver_prism))]
+colnames(liver_prism)  <- substr(colnames(liver_prism),1,12)
+liver_prism <- liver_prism %>% t() %>% as.data.frame()
+
+Bayes_liver <- liver_prism
+Bayes_liver1 <- Bayes_liver
+for (i in 1:length(colnames(Bayes_liver))) {
+  for (j in 1:5) {
+    quant <- quantile(Bayes_liver1[,i])
+    Bayes_liver[which(Bayes_liver1[,i] > quant[j]),i] <- j
+  }
+}
+
+#rownames(Bayes_LUSC) = gsub("\\.", "-", rownames(Bayes_LUSC))
+
+Bayes_liver$sample <- rownames(Bayes_liver)
+
+
+forest_data_Bayes <- left_join(Bayes_liver,dados_sobrevida_pancancer[,c(1,25,26,3,4,35,31,32)], by= c("sample" = "bcr_patient_barcode"))
+forest_data_Bayes$gender = forest_data_Bayes$gender %>% as.factor()
+forest_data_Bayes$Stage = forest_data_Bayes$Stage %>% as.factor()
+names(forest_data_Bayes)[40]="Age"
+
+```
+
+
+
+```{r}
+surv_object <- Surv(time = forest_data_Bayes$OS.time, event = forest_data_Bayes$OS)
+
+colnames(forest_data_Bayes)[36] ="Mac_Alv_like"
+
+
+covariables <- colnames(forest_data_Bayes)[c(1:36,40:42)]
+univ_formulas_Bayes <- sapply(covariables,
+                        function(x) as.formula(paste('surv_object ~', x)))
+
+univ_models_Bayes <- lapply(univ_formulas_Bayes, function(x){coxph(x, data = forest_data_Bayes)})
+
+univ_results_Bayes <- lapply(univ_models_Bayes,
+                       function(x){ 
+                         x <- summary(x)
+                         p.value<-signif(x$wald["pvalue"], digits=2)
+                         wald.test<-signif(x$wald["test"], digits=2)
+                         beta<-signif(x$coef[1], digits=2);#coeficient beta
+                         HR <-signif(x$coef[2], digits=2);#exp(beta)
+                         HR.confint.lower <- signif(x$conf.int[,"lower .95"], 2)
+                         HR.confint.upper <- signif(x$conf.int[,"upper .95"],2)
+                         HR <- paste0(HR, " (", 
+                                      HR.confint.lower, "-", HR.confint.upper, ")")
+                         res<-c(beta, HR, wald.test, p.value)
+                         names(res)<-c("beta", "HR (95% CI for HR)", "wald.test", 
+                                       "p.value")
+                         return(res)
+                         #return(exp(cbind(coef(x),confint(x))))
+                       })
+
+#res.Bayes <- t(as.data.frame(univ_results_Bayes, check.names = FALSE))
+res.Bayes = as.data.frame(t(do.call(cbind, univ_results_Bayes)))
+res.Bayes <- as.data.frame(res.Bayes)
+res.Bayes$p.value <- as.character(res.Bayes$p.value)
+res.Bayes$p.value <- as.numeric(res.Bayes$p.value)
+res.Bayes_filt <- res.Bayes[which(res.Bayes$p.value <= 0.05),]
+
+res.Bayes_filt
+
+Liver = res.Bayes
+```
+
+
+```{r}
+univ_models_Bayes$Stage
+Liver = res.Bayes
+Liver[39,4] <- 3.139e-05
+```
+
+
+```{r fig.height=2.5, fig.width=5}
+f1 <- as.formula(paste("Surv(time = forest_data_Bayes$OS.time, event = forest_data_Bayes$OS) ~ ",
+                       paste(c(rownames(res.Bayes_filt), "Stage"), collapse= "+")))
+
+fit.coxph <- coxph(f1, data = forest_data_Bayes)
+summary(fit.coxph)
+
+surv_LIHC=ggforest(fit.coxph, data = forest_data_Bayes, main = "Hazard Ratio - LIHC")
+```
+
+```{r}
+lrm   <- summary(fit.coxph)
+  if (dim(lrm$coefficients)[1]>1){
+    pval       <- signif(lrm$coefficients[,"Pr(>|z|)"], digits = 2)
+    hazard.ratio <- signif(lrm$coefficients[,"exp(coef)"], digits = 2)
+    conf       <- suppressMessages(confint(fit.coxph))
+    ci.low     <- signif(lrm$conf.int[,"lower .95"], digits = 2)
+    ci.hi      <- signif(lrm$conf.int[,"upper .95"], digits = 2)
+    md <- data.frame(pval,hazard.ratio,ci.low,ci.hi)
+  }
+md
+
+liver_multi = as.data.frame(md)
+names(liver_multi)[2] <- "LIHC"
+```
+
+#COLON
+
+```{r}
+load("Prism_coad.RData")
+
+colon_prism <- as.data.frame(get.fraction (bp=bp.res.update,
+            which.theta = "first",
+            state.or.type="state"))
+colnames(colon_prism)[which(colnames(colon_prism) %in% c("Mono_CD16"))] <-"Mono_FCG3RA"
+colnames(colon_prism)[which(colnames(colon_prism) %in% c("MonoInter_FOS-"))] <- "MonoInter_CXCL10"
+colnames(colon_prism)[which(colnames(colon_prism) %in% c("MonoInter_FOS+"))] <- "MonoInter_CLEC10A"
+rm(bp.res.update)
+```
+
+
+
+```{r}
+colon_prism <- colon_prism %>% t() %>% as.data.frame()
+colnames(colon_prism) = gsub("\\.", "-", colnames(colon_prism))
+colnames(colon_prism)  <- substr(colnames(colon_prism),1,12)
+colon_prism <- colon_prism %>% t() %>% as.data.frame()
+
+Bayes_coad <- colon_prism
+Bayes_coad1 <- Bayes_coad
+for (i in 1:length(colnames(Bayes_coad))) {
+  for (j in 1:5) {
+    quant <- quantile(Bayes_coad1[,i])
+    Bayes_coad[which(Bayes_coad1[,i] > quant[j]),i] <- j
+  }
+}
+
+rownames(Bayes_coad) = gsub("\\.", "-", rownames(Bayes_coad))
+
+library(survival)
+library(survminer)
+
+
+
+Bayes_coad$sample <- rownames(Bayes_coad)
+Bayes_coad = Bayes_coad[Bayes_coad$sample %in% dados_sobrevida_pancancer[grepl("COAD", dados_sobrevida_pancancer$type),]$bcr_patient_barcode,]
+
+library(dplyr)
+forest_data_Bayes <- left_join(Bayes_coad,dados_sobrevida_pancancer[,c(1,25,26,3,4,35)], by= c("sample" = "bcr_patient_barcode"))
+forest_data_Bayes$gender=forest_data_Bayes$gender %>% as.factor()
+forest_data_Bayes$Stage = forest_data_Bayes$Stage %>% as.factor()
+
+colnames(forest_data_Bayes)[43]="Age"
+
+```
+
+```{r}
+surv_object <- Surv(time = forest_data_Bayes$OS.time, event = forest_data_Bayes$OS)
+
+colnames(forest_data_Bayes)[31] ="Mono_CD14_FOSpos"
+colnames(forest_data_Bayes)[34] ="Mono_CD14_FOSneg"
+colnames(forest_data_Bayes)[39] = "Mac_Alv_like"
+
+covariables <- colnames(forest_data_Bayes)[c(1:39,43:45)]
+
+univ_formulas_Bayes <- sapply(covariables,
+                        function(x) as.formula(paste('surv_object ~', x)))
+
+univ_models_Bayes =  lapply(univ_formulas_Bayes, function(x){coxph(x, data = forest_data_Bayes)}) 
+
+univ_results_Bayes <- lapply(univ_models_Bayes,
+                       function(x){ 
+                         x <- summary(x)
+                         p.value<-signif(x$wald["pvalue"], digits=2)
+                         wald.test<-signif(x$wald["test"], digits=2)
+                         beta<-signif(x$coef[1], digits=2);#coeficient beta
+                         HR <-signif(x$coef[2], digits=2);#exp(beta)
+                         HR.confint.lower <- signif(x$conf.int[,"lower .95"], 2)
+                         HR.confint.upper <- signif(x$conf.int[,"upper .95"],2)
+                         HR <- paste0(HR, " (", 
+                                      HR.confint.lower, "-", HR.confint.upper, ")")
+                         res<-c(beta, HR, wald.test, p.value)
+                         names(res)<-c("beta", "HR (95% CI for HR)", "wald.test", 
+                                       "p.value")
+                         return(res)
+                         #return(exp(cbind(coef(x),confint(x))))
+                       })
+
+#res.Bayes <- t(as.data.frame(univ_results_Bayes, check.names = FALSE))
+res.Bayes= as.data.frame(t(do.call(cbind, univ_results_Bayes)))
+res.Bayes <- as.data.frame(res.Bayes)
+res.Bayes$p.value <- as.character(res.Bayes$p.value)
+res.Bayes$p.value <- as.numeric(res.Bayes$p.value)
+res.Bayes_filt <- res.Bayes[which(res.Bayes$p.value <= 0.05),]
+
+res.Bayes_filt
+
+```
+
+```{r fig.height=2.5, fig.width=5}
+rownames(res.Bayes_filt) 
+
+f1 <- as.formula(paste("Surv(time = forest_data_Bayes$OS.time, event = forest_data_Bayes$OS) ~ ",
+                       paste(rownames(res.Bayes_filt), collapse= "+")))
+
+fit.coxph <- coxph(f1, data = forest_data_Bayes)
+summary(fit.coxph)
+
+surv_COAD=ggforest(fit.coxph, data = forest_data_Bayes, main = "Hazard Ratio - COAD")
+```
+
+```{r}
+univ_models_Bayes$Stage
+coad = res.Bayes
+coad[42,4] <- 2.324e-09
+```
+
+#READ
+
+```{r}
+load("Prism_read.RData")
+
+read_prism <- as.data.frame(get.fraction (bp=bp.res.update,
+            which.theta = "first",
+            state.or.type="state"))
+colnames(read_prism)[which(colnames(read_prism) %in% c("Mono_CD16"))] <-"Mono_FCG3RA"
+colnames(read_prism)[which(colnames(read_prism) %in% c("MonoInter_FOS-"))] <- "MonoInter_CXCL10"
+colnames(read_prism)[which(colnames(read_prism) %in% c("MonoInter_FOS+"))] <- "MonoInter_CLEC10A"
+rm(bp.res.update)
+```
+
+```{r}
+
+read_prism <- read_prism %>% t() %>% as.data.frame()
+colnames(read_prism) = gsub("\\.", "-", colnames(read_prism))
+colnames(read_prism)  <- substr(colnames(read_prism),1,12)
+read_prism <- read_prism %>% t() %>% as.data.frame()
+
+
+Bayes_coad <- read_prism
+Bayes_coad1 <- Bayes_coad
+for (i in 1:length(colnames(Bayes_coad))) {
+  for (j in 1:5) {
+    quant <- quantile(Bayes_coad1[,i])
+    Bayes_coad[which(Bayes_coad1[,i] > quant[j]),i] <- j
+  }
+}
+
+rownames(Bayes_coad) = gsub("\\.", "-", rownames(Bayes_coad))
+
+library(survival)
+library(survminer)
+
+
+Bayes_coad$sample <- rownames(Bayes_coad)
+Bayes_READ = Bayes_coad[Bayes_coad$sample %in% dados_sobrevida_pancancer[grepl("READ", dados_sobrevida_pancancer$type),]$bcr_patient_barcode,]
+
+
+library(dplyr)
+forest_data_Bayes <- left_join(Bayes_READ,dados_sobrevida_pancancer[,c(1,25,26,3,4,35)], by= c("sample" = "bcr_patient_barcode"))
+forest_data_Bayes$gender=forest_data_Bayes$gender %>% as.factor()
+forest_data_Bayes$Stage = forest_data_Bayes$Stage %>% as.factor()
+colnames(forest_data_Bayes)[43]="Age"
+
+
+```
+
+```{r}
+surv_object <- Surv(time = forest_data_Bayes$OS.time, event = forest_data_Bayes$OS)
+colnames(forest_data_Bayes)[31] ="Mono_CD14_FOSpos"
+colnames(forest_data_Bayes)[34] ="Mono_CD14_FOSneg"
+colnames(forest_data_Bayes)[39] = "Mac_Alv_like"
+
+covariables <- colnames(forest_data_Bayes)[c(1:39,43:45)]
+
+univ_formulas_Bayes <- sapply(covariables,
+                        function(x) as.formula(paste('surv_object ~', x)))
+
+univ_models_Bayes =  lapply(univ_formulas_Bayes, function(x){coxph(x, data = forest_data_Bayes)}) 
+
+univ_results_Bayes <- lapply(univ_models_Bayes,
+                       function(x){ 
+                         x <- summary(x)
+                         p.value<-signif(x$wald["pvalue"], digits=2)
+                         wald.test<-signif(x$wald["test"], digits=2)
+                         beta<-signif(x$coef[1], digits=2);#coeficient beta
+                         HR <-signif(x$coef[2], digits=2);#exp(beta)
+                         HR.confint.lower <- signif(x$conf.int[,"lower .95"], 2)
+                         HR.confint.upper <- signif(x$conf.int[,"upper .95"],2)
+                         HR <- paste0(HR, " (", 
+                                      HR.confint.lower, "-", HR.confint.upper, ")")
+                         res<-c(beta, HR, wald.test, p.value)
+                         names(res)<-c("beta", "HR (95% CI for HR)", "wald.test", 
+                                       "p.value")
+                         return(res)
+                         #return(exp(cbind(coef(x),confint(x))))
+                       })
+
+#res.Bayes <- t(as.data.frame(univ_results_Bayes, check.names = FALSE))
+res.Bayes= as.data.frame(t(do.call(cbind, univ_results_Bayes)))
+res.Bayes <- as.data.frame(res.Bayes)
+res.Bayes$p.value <- as.character(res.Bayes$p.value)
+res.Bayes$p.value <- as.numeric(res.Bayes$p.value)
+res.Bayes_filt <- res.Bayes[which(res.Bayes$p.value <= 0.05),]
+
+res.Bayes_filt
+
+READ = res.Bayes
+
+```
+
+```{r}
+univ_models_Bayes$Stage
+read = res.Bayes
+read[42,4] <- 0.007753
+```
+
+
+```{r fig.height=2.5, fig.width=5}
+rownames(res.Bayes_filt) #Stage, subtype_mRNA
+
+f1 <- as.formula(paste("Surv(time = forest_data_Bayes$OS.time, event = forest_data_Bayes$OS) ~ ",
+                       paste(c(rownames(res.Bayes_filt), "Stage"), collapse= "+")))
+
+fit.coxph <- coxph(f1, data = forest_data_Bayes)
+summary(fit.coxph)
+
+ggforest(fit.coxph, data = forest_data_Bayes, main = "Hazard Ratio - READ")
+
+```
+
+```{r}
+lrm   <- summary(fit.coxph)
+  if (dim(lrm$coefficients)[1]>1){
+    pval       <- signif(lrm$coefficients[,"Pr(>|z|)"], digits = 2)
+    hazard.ratio <- signif(lrm$coefficients[,"exp(coef)"], digits = 2)
+    conf       <- suppressMessages(confint(fit.coxph))
+    ci.low     <- signif(lrm$conf.int[,"lower .95"], digits = 2)
+    ci.hi      <- signif(lrm$conf.int[,"upper .95"], digits = 2)
+    md <- data.frame(pval,hazard.ratio,ci.low,ci.hi)
+  }
+md
+
+read_multi = as.data.frame(md)
+names(read_multi)[2] <- "READ"
+```
+
+
+# MELANOMA
+
+```{r}
+load("Prism_melanoma.RData")
+
+melanoma_prism <- as.data.frame(get.fraction (bp=bp.res.update,
+            which.theta = "first",
+            state.or.type="state"))
+colnames(melanoma_prism)[which(colnames(melanoma_prism) %in% c("Mono_CD16"))] <-"Mono_FCG3RA"
+colnames(melanoma_prism)[which(colnames(melanoma_prism) %in% c("MonoInter_FOS-"))] <- "MonoInter_CXCL10"
+colnames(melanoma_prism)[which(colnames(melanoma_prism) %in% c("MonoInter_FOS+"))] <- "MonoInter_CLEC10A"
+rm(bp.res.update)
+```
+
+
+```{r}
+
+melanoma_prism <- melanoma_prism %>% t() %>% as.data.frame()
+colnames(melanoma_prism) = gsub("\\.", "-", colnames(melanoma_prism))
+
+melanoma_prism <-melanoma_prism[,grepl("-06A",colnames(melanoma_prism))]
+colnames(melanoma_prism)  <- substr(colnames(melanoma_prism),1,12)
+melanoma_prism <- melanoma_prism %>% t() %>% as.data.frame()
+
+
+Bayes_mel <- melanoma_prism
+
+Bayes_mel1 <- Bayes_mel
+for (i in 1:length(colnames(Bayes_mel))) {
+  for (j in 1:5) {
+    quant <- quantile(Bayes_mel1[,i])
+    Bayes_mel[which(Bayes_mel1[,i] > quant[j]),i] <- j
+  }
+}
+
+
+Bayes_mel$sample <- rownames(Bayes_mel)
+
+
+forest_data_Bayes <-   left_join(Bayes_mel,dados_SKCM$survival_met[,c(1,16,17,2,5)], by= c("sample" = "bcr_patient_barcode"))
+
+forest_data_Bayes$gender = forest_data_Bayes$gender %>% as.factor()
+
+names(forest_data_Bayes)[25]="Age"
+
+```
+
+```{r fig.height=2.5, fig.width=5}
+surv_object <- Surv(time = forest_data_Bayes$OS.time, event = forest_data_Bayes$OS)
+colnames(forest_data_Bayes)[13] = "Mono_CD14_FOSneg"
+
+
+covariables <- colnames(forest_data_Bayes)[c(1:20,24:25)]
+univ_formulas_Bayes <- sapply(covariables,
+                        function(x) as.formula(paste('surv_object ~', x)))
+
+univ_models_Bayes <- lapply(univ_formulas_Bayes, function(x){coxph(x, data = forest_data_Bayes)})
+
+univ_results_Bayes <- lapply(univ_models_Bayes,
+                       function(x){ 
+                         x <- summary(x)
+                         p.value<-signif(x$wald["pvalue"], digits=2)
+                         wald.test<-signif(x$wald["test"], digits=2)
+                         beta<-signif(x$coef[1], digits=2);#coeficient beta
+                         HR <-signif(x$coef[2], digits=2);#exp(beta)
+                         HR.confint.lower <- signif(x$conf.int[,"lower .95"], 2)
+                         HR.confint.upper <- signif(x$conf.int[,"upper .95"],2)
+                         HR <- paste0(HR, " (", 
+                                      HR.confint.lower, "-", HR.confint.upper, ")")
+                         res<-c(beta, HR, wald.test, p.value)
+                         names(res)<-c("beta", "HR (95% CI for HR)", "wald.test", 
+                                       "p.value")
+                         return(res)
+                         #return(exp(cbind(coef(x),confint(x))))
+                       })
+
+#res.Bayes <- t(as.data.frame(univ_results_Bayes, check.names = FALSE))
+res.Bayes = as.data.frame(t(do.call(cbind, univ_results_Bayes)))
+res.Bayes <- as.data.frame(res.Bayes)
+res.Bayes$p.value <- as.character(res.Bayes$p.value)
+res.Bayes$p.value <- as.numeric(res.Bayes$p.value)
+res.Bayes_filt <- res.Bayes[which(res.Bayes$p.value <= 0.05),]
+
+res.Bayes_filt
+
+SKCM_Met = res.Bayes
+
+rownames(res.Bayes_filt)
+
+f1 <- as.formula(paste("Surv(forest_data_Bayes$OS.time, event = forest_data_Bayes$OS) ~ ",
+                       paste(c(rownames(res.Bayes_filt)), collapse= "+")))
+
+fit.coxph <- coxph(f1, data = forest_data_Bayes)
+summary(fit.coxph)
+
+ggforest(fit.coxph, data = forest_data_Bayes, main = "Hazard Ratio - SKCM:Melanoma Metastasis")
+```
+
+```{r}
+univ_models_Bayes$gender
+SKCM_Met = res.Bayes
+SKCM_Met[21,4] <- 0.4832
+```
+```{r}
+lrm   <- summary(fit.coxph)
+  if (dim(lrm$coefficients)[1]>1){
+    pval       <- signif(lrm$coefficients[,"Pr(>|z|)"], digits = 2)
+    hazard.ratio <- signif(lrm$coefficients[,"exp(coef)"], digits = 2)
+    conf       <- suppressMessages(confint(fit.coxph))
+    ci.low     <- signif(lrm$conf.int[,"lower .95"], digits = 2)
+    ci.hi      <- signif(lrm$conf.int[,"upper .95"], digits = 2)
+    md <- data.frame(pval,hazard.ratio,ci.low,ci.hi)
+  }
+md
+
+skcmMet_multi = as.data.frame(md)
+names(skcmMet_multi)[2] <- "SKCM_Met"
+```
+
+#Melanoma Primary
+
+```{r}
+load("Prism_melanoma.RData")
+
+melanoma_prism <- as.data.frame(get.fraction (bp=bp.res.update,
+            which.theta = "first",
+            state.or.type="state"))
+colnames(melanoma_prism)[which(colnames(melanoma_prism) %in% c("Mono_CD16"))] <-"Mono_FCG3RA"
+colnames(melanoma_prism)[which(colnames(melanoma_prism) %in% c("MonoInter_FOS-"))] <- "MonoInter_CXCL10"
+colnames(melanoma_prism)[which(colnames(melanoma_prism) %in% c("MonoInter_FOS+"))] <- "MonoInter_CLEC10A"
+rm(bp.res.update)
+```
+
+```{r}
+melanoma_prism <- melanoma_prism %>% t() %>% as.data.frame()
+colnames(melanoma_prism) = gsub("\\.", "-", colnames(melanoma_prism))
+
+melanoma_prism <-melanoma_prism[,grepl("-01A",colnames(melanoma_prism))]
+colnames(melanoma_prism)  <- substr(colnames(melanoma_prism),1,12)
+melanoma_prism <- melanoma_prism %>% t() %>% as.data.frame()
+
+
+Bayes_mel <- melanoma_prism
+
+Bayes_mel1 <- Bayes_mel
+for (i in 1:length(colnames(Bayes_mel))) {
+  for (j in 1:5) {
+    quant <- quantile(Bayes_mel1[,i])
+    Bayes_mel[which(Bayes_mel1[,i] > quant[j]),i] <- j
+  }
+}
+
+
+Bayes_mel$sample <- rownames(Bayes_mel)
+
+
+forest_data_Bayes <-   left_join(Bayes_mel,dados_SKCM$survival_primary[,c(1,15,16,2,8)], by= c("sample" = "bcr_patient_barcode"))
+
+forest_data_Bayes$gender = forest_data_Bayes$gender %>% as.factor()
+
+names(forest_data_Bayes)[25]="Age"
+
+```
+
+```{r fig.height=2.5, fig.width=5}
+surv_object <- Surv(time = forest_data_Bayes$OS.time, event = forest_data_Bayes$OS)
+colnames(forest_data_Bayes)[13] = "Mono_CD14_FOSneg"
+
+
+covariables <- colnames(forest_data_Bayes)[c(1:20,25)]
+univ_formulas_Bayes <- sapply(covariables,
+                        function(x) as.formula(paste('surv_object ~', x)))
+
+univ_models_Bayes <- lapply(univ_formulas_Bayes, function(x){coxph(x, data = forest_data_Bayes)})
+
+univ_results_Bayes <- lapply(univ_models_Bayes,
+                       function(x){ 
+                         x <- summary(x)
+                         p.value<-signif(x$wald["pvalue"], digits=2)
+                         wald.test<-signif(x$wald["test"], digits=2)
+                         beta<-signif(x$coef[1], digits=2);#coeficient beta
+                         HR <-signif(x$coef[2], digits=2);#exp(beta)
+                         HR.confint.lower <- signif(x$conf.int[,"lower .95"], 2)
+                         HR.confint.upper <- signif(x$conf.int[,"upper .95"],2)
+                         HR <- paste0(HR, " (", 
+                                      HR.confint.lower, "-", HR.confint.upper, ")")
+                         res<-c(beta, HR, wald.test, p.value)
+                         names(res)<-c("beta", "HR (95% CI for HR)", "wald.test", 
+                                       "p.value")
+                         return(res)
+                         #return(exp(cbind(coef(x),confint(x))))
+                       })
+
+#res.Bayes <- t(as.data.frame(univ_results_Bayes, check.names = FALSE))
+res.Bayes = as.data.frame(t(do.call(cbind, univ_results_Bayes)))
+res.Bayes <- as.data.frame(res.Bayes)
+res.Bayes$p.value <- as.character(res.Bayes$p.value)
+res.Bayes$p.value <- as.numeric(res.Bayes$p.value)
+res.Bayes_filt <- res.Bayes[which(res.Bayes$p.value <= 0.05),]
+
+res.Bayes_filt
+
+
+
+rownames(res.Bayes_filt)
+
+f1 <- as.formula(paste("Surv(forest_data_Bayes$OS.time, event = forest_data_Bayes$OS) ~ ",
+                       paste(c(rownames(res.Bayes_filt)), collapse= "+")))
+
+fit.coxph <- coxph(f1, data = forest_data_Bayes)
+summary(fit.coxph)
+
+ggforest(fit.coxph, data = forest_data_Bayes, main = "Hazard Ratio - SKCM:Melanoma Primary")
+```
+
+```{r}
+SKCM_Prim = res.Bayes
+SKCM_Prim
+```
+
+```{r}
+lrm   <- summary(fit.coxph)
+  if (dim(lrm$coefficients)[1]>1){
+    pval       <- signif(lrm$coefficients[,"Pr(>|z|)"], digits = 2)
+    hazard.ratio <- signif(lrm$coefficients[,"exp(coef)"], digits = 2)
+    conf       <- suppressMessages(confint(fit.coxph))
+    ci.low     <- signif(lrm$conf.int[,"lower .95"], digits = 2)
+    ci.hi      <- signif(lrm$conf.int[,"upper .95"], digits = 2)
+    md <- data.frame(pval,hazard.ratio,ci.low,ci.hi)
+  }
+md
+
+skcmPrim_multi = as.data.frame(md)
+names(skcmPrim_multi)[2] <- "SKCM_Prim"
+```
+
+#UVM
+
+```{r}
+load("Prism_uveal.RData")
+
+uveal_prism <- as.data.frame(get.fraction (bp=bp.res.update,
+            which.theta = "first",
+            state.or.type="state"))
+
+rm(bp.res.update)
+```
+
+```{r}
+uveal_prism=as.data.frame(uveal_prism)
+uveal_prism <- uveal_prism %>% t() %>% as.data.frame()
+colnames(uveal_prism) = gsub("\\.", "-", colnames(uveal_prism))
+
+uveal_prism <-uveal_prism[,grepl("-01A",colnames(uveal_prism))]
+colnames(uveal_prism)  <- substr(colnames(uveal_prism),1,12)
+
+
+Bayes_uveal <- as.data.frame(t(uveal_prism))
+Bayes_uveal1 <- Bayes_uveal
+for (i in 1:length(colnames(Bayes_uveal))) {
+  for (j in 1:5) {
+    quant <- quantile(Bayes_uveal1[,i])
+    Bayes_uveal[which(Bayes_uveal1[,i] > quant[j]),i] <- j
+  }
+}
+
+#rownames(Bayes_LUSC) = gsub("\\.", "-", rownames(Bayes_LUSC))
+
+library(survival)
+library(survminer)
+
+Bayes_uveal$sample <- rownames(Bayes_uveal)
+
+library(dplyr)
+forest_data_Bayes <- left_join(Bayes_uveal,dados_sobrevida_pancancer[,c(1,25,26,3,4,35)], by= c("sample" = "bcr_patient_barcode"))
+forest_data_Bayes$gender = forest_data_Bayes$gender %>% as.factor()
+forest_data_Bayes$Stage = forest_data_Bayes$Stage %>% as.factor()
+names(forest_data_Bayes)[25]="Age"
+
+```
+
+
+
+```{r}
+surv_object <- Surv(time = forest_data_Bayes$OS.time, event = forest_data_Bayes$OS)
+colnames(forest_data_Bayes)[1]="uveal_normal"
+colnames(forest_data_Bayes)[3]="uveal_tumor"
+
+covariables <- colnames(forest_data_Bayes)[c(1:21,25:27)]
+univ_formulas_Bayes <- sapply(covariables,
+                        function(x) as.formula(paste('surv_object ~', x)))
+
+univ_models_Bayes <- lapply(univ_formulas_Bayes, function(x){coxph(x, data = forest_data_Bayes)})
+
+univ_results_Bayes <- lapply(univ_models_Bayes,
+                       function(x){ 
+                         x <- summary(x)
+                         p.value<-signif(x$wald["pvalue"], digits=2)
+                         wald.test<-signif(x$wald["test"], digits=2)
+                         beta<-signif(x$coef[1], digits=2);#coeficient beta
+                         HR <-signif(x$coef[2], digits=2);#exp(beta)
+                         HR.confint.lower <- signif(x$conf.int[,"lower .95"], 2)
+                         HR.confint.upper <- signif(x$conf.int[,"upper .95"],2)
+                         HR <- paste0(HR, " (", 
+                                      HR.confint.lower, "-", HR.confint.upper, ")")
+                         res<-c(beta, HR, wald.test, p.value)
+                         names(res)<-c("beta", "HR (95% CI for HR)", "wald.test", 
+                                       "p.value")
+                         return(res)
+                         #return(exp(cbind(coef(x),confint(x))))
+                       })
+
+#res.Bayes <- t(as.data.frame(univ_results_Bayes, check.names = FALSE))
+res.Bayes = as.data.frame(t(do.call(cbind, univ_results_Bayes)))
+res.Bayes <- as.data.frame(res.Bayes)
+res.Bayes$p.value <- as.character(res.Bayes$p.value)
+res.Bayes$p.value <- as.numeric(res.Bayes$p.value)
+res.Bayes_filt <- res.Bayes[which(res.Bayes$p.value <= 0.05),]
+
+uveal = res.Bayes
+res.Bayes_filt
+```
+
+
+````{r}
+uveal = res.Bayes
+uveal[21,4] <- 0.21
+uveal[22,4] <- 0.0008332
+````
+
+
+```{r fig.height=2.5, fig.width=5}
+rownames(res.Bayes_filt) #Stage, subtype_mRNA
+
+f1 <- as.formula(paste("Surv(time = forest_data_Bayes$OS.time, event = forest_data_Bayes$OS) ~ ",
+                       paste(c(rownames(res.Bayes_filt), "Stage"), collapse= "+")))
+
+fit.coxph <- coxph(f1, data = forest_data_Bayes)
+summary(fit.coxph)
+
+ggforest(fit.coxph, data = forest_data_Bayes, main = "Hazard Ratio - UVM")
+
+```
+
+```{r}
+lrm   <- summary(fit.coxph)
+  if (dim(lrm$coefficients)[1]>1){
+    pval       <- signif(lrm$coefficients[,"Pr(>|z|)"], digits = 2)
+    hazard.ratio <- signif(lrm$coefficients[,"exp(coef)"], digits = 2)
+    conf       <- suppressMessages(confint(fit.coxph))
+    ci.low     <- signif(lrm$conf.int[,"lower .95"], digits = 2)
+    ci.hi      <- signif(lrm$conf.int[,"upper .95"], digits = 2)
+    md <- data.frame(pval,hazard.ratio,ci.low,ci.hi)
+  }
+md
+
+uveal_multi = as.data.frame(md)
+names(uveal_multi)[2] <- "UVM"
+```
+
+
+

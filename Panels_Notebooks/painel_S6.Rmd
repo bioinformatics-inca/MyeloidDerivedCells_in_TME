@@ -1,0 +1,39 @@
+---
+title: "Figure S6 - immunosuppressive signatures"
+output: html_notebook
+author: "MarcoPretti"
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r library packages}
+suppressPackageStartupMessages({
+  library(Seurat)
+  library(dplyr)
+  library(ggplot2)
+  library(dittoSeq)
+  library(RColorBrewer)
+  library(gridExtra)
+  library(grid)
+  library(ggpubr)
+  library(dittoSeq)
+  library(AnnotationDbi)
+  library(EnsDb.Hsapiens.v86)
+  library(ggplotify)
+})
+
+pacman::p_load(data.table, pheatmap, cowplot, tidyverse)
+
+source('/bin/compass/Compass.R')
+
+col = colorRampPalette(c("navy", "white", "firebrick3"))
+```
+
+```{r}
+load("/data/S6_figure.RData")
+```
+
+```{r fig.height=20, fig.width=18}
+pS6 <- pheatmap(pathways_summary_heatmap, scale = 'column', color = col(100), treeheight_col = 5, treeheight_row = 10, angle_col = 315, fontsize_row = 14, fontsize_col = 14)
+```
+

@@ -1,0 +1,95 @@
+---
+title: "Figure S3 - cDC"
+output: html_notebook
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r library packages}
+suppressPackageStartupMessages({
+  library(Seurat)
+  library(dplyr)
+  library(ggplot2)
+  library(dittoSeq)
+  library(RColorBrewer)
+  library(gridExtra)
+  library(grid)
+  library(dittoSeq)
+  library(clusterProfiler)
+  library(ReactomePA)
+  library(AnnotationDbi)
+  library(EnsDb.Hsapiens.v86)
+  library(ggplotify)
+})
+```
+
+```{r}
+load("/data/S5_figure.RData")
+```
+
+```{r}
+bar_tema = list(
+  theme(
+    plot.title = element_text(size=0),
+    plot.subtitle = element_text(size=0),
+    axis.text.x = element_text(size = 12, angle=0, hjust = 0.5, color = 'black'),
+    axis.text.y = element_text(size = 12, color = 'black'),
+    axis.title.y = element_text(size = 12),
+    axis.title.x = element_text(size = 12),
+    legend.text = element_text(size = 12),
+    #legend.position="bottom"
+  ))
+
+macro_pal = c("Mac_Alv-like" = "#8B87FE",
+        "Mac_Angio" = "#DC4A82",
+        "Mac_Hypo" = "#FFA8DE",
+        "Mac_IFN"= "#6B6AF4",
+        "Mac_LA" = "#BD26DE",
+        "Mac_Prolif"= "#CFB8D9",
+        "Mac_Rec" = "#BF8FFF",
+        "Mac_Reg" = "#00AEEE",
+        "RTM_IM"= "#1be19f",
+        "RTM_IFN" = "#a2db71",
+        "RTM_LA"= "#4ddfc8", 
+        "RTM-like_MT"= "#579C99")
+```
+
+```{r}
+pal = rcartocolor::carto_pal(n=7, "Prism")
+p1 <- dittoBarPlot(data, group.by = "harm_sample.type", "rcelltype", scale = "percent", color.panel = pal) + coord_flip() + bar_tema + xlab("") & NoLegend()
+```
+
+```{r}
+p2 <- dittoBarPlot(data, group.by = "harm_sample.type", "rcelltype", scale = "count", color.panel = pal) + coord_flip() + bar_tema + xlab("")
+```
+```{r}
+p3 <- dittoBarPlot(data, group.by = "condition2", "rcelltype", scale = "percent", color.panel = pal) + coord_flip() + bar_tema + xlab("")
+```
+
+```{r}
+p4 <- dittoBarPlot(data, group.by = "harm_sample.type", "celltype", scale = "count", color.panel = macro_pal, retain.factor.levels = F) + coord_flip() + bar_tema + xlab("")
+```
+
+```{r}
+p5a <- dittoBarPlot(data, group.by = "condition2", "celltype", scale = "percent", color.panel = macro_pal, retain.factor.levels = T) + coord_flip() + bar_tema + xlab("")
+```
+
+```{r}
+p5 <- dittoBarPlot(data, group.by = "condition2", "celltype", scale = "count", color.panel = macro_pal, retain.factor.levels = T) + coord_flip() + bar_tema + xlab("")
+```
+
+```{r fig.width=10, fig.height=15}
+panelS5a = cowplot::plot_grid(p1, (p2 &NoLegend()), p3, labels = c("a", "b", "c"), nrow=1, ncol = 3, label_size = 20) 
+panelS5b = cowplot::plot_grid((p4&NoLegend()), (p5a&NoLegend()), p5, nrow=1,ncol = 3, heights = c(0.5), labels = c("d", "e", "f"), label_size = 20)
+
+panelS5 = cowplot::plot_grid(
+  panelS5a,
+  panelS5b,
+  nrow = 2,
+  rel_heights = c(0.2,0.3,0.3)
+)
+```
+
+```{r fig.width=20, fig.height=8}
+panelS5
+```

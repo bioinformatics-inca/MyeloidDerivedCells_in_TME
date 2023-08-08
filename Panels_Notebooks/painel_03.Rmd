@@ -1,0 +1,166 @@
+---
+title: "Figure 3 - Mono"
+output: html_notebook
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r library packages}
+suppressPackageStartupMessages({
+  library(Seurat)
+  library(dplyr)
+  library(ggplot2)
+  library(dittoSeq)
+  library(RColorBrewer)
+  library(gridExtra)
+  library(grid)
+  library(dittoSeq)
+  library(clusterProfiler)
+  library(ReactomePA)
+  library(AnnotationDbi)
+  library(EnsDb.Hsapiens.v86)
+  library(ggplotify)
+})
+```
+
+```{r}
+load("/data/02_monofigure.RData")
+```
+
+```{r fig.height=6, fig.width=9}
+bar_tema = list(
+  theme(
+    plot.title = element_text(size=0),
+    plot.subtitle = element_text(size=0),
+    axis.text.x = element_text(size = 20, angle=0, hjust = 0.5, color = 'black'),
+    axis.text.y = element_text(size = 20, color = 'black'),
+    axis.title.y = element_text(size = 20),
+    axis.title.x = element_text(size = 20),
+    legend.text = element_text(size = 20),
+    #legend.position="bottom"
+  ))
+
+dp_tema <- list(
+  theme(
+    plot.title = element_text(size = 0),
+    plot.subtitle = element_text(size = 0),
+    axis.text.x = element_text(size = 18, angle = 45, hjust = 1, vjust = 1, color = 'black'),
+    axis.text.y = element_text(size = 18, color = 'black'),
+    axis.title.y = element_text(size = 18),
+    axis.title.x = element_text(size = 18),
+    legend.text = element_text(size = 18)
+))
+
+mono_pal <- c('Mono_CD14_FOS+' = "#ffaf65", 'Mono_CD14_FOS-' = "#ef3142", 'Mono_FCGR3A' = "#755c46", 'Mono_IL1B' = "#d35b00", 'MonoInter_CLEC10A' = "#b88b97", 'MonoInter_CXCL10' = "#b0003b")
+mono_pal2 <- c('Mono_Classical' = "#ef3142", 'Mono_Non-Classical' = "#b0003b", 'Mono_Inflammatory' = "#d35b00", 'Mono_Intermediate' = "#b88b97")
+```
+
+
+Mono
+
+```{r}
+mono$celltype2 <- mono$celltype
+mono$celltype2 <- gsub("Mono_FCGR3A","Mono_Non-Classical", mono$celltype2)
+mono$celltype2 <- gsub("Mono_IL1B","Mono_Inflammatory", mono$celltype2)
+mono$celltype2 <- gsub("Mono_CD14_FOS[+-]$", "Mono_Classical", mono$celltype2)
+mono$celltype2 <- gsub("MonoInter_CLEC10A|MonoInter_CXCL10","Mono_Intermediate", mono$celltype2)
+
+p1 <- DimPlot(mono, group.by = 'celltype2', raster = T, pt.size = 2.5, shuffle = T, cols = mono_pal2, seed = 1) + ggtitle("") & NoAxes() & NoLegend()
+
+p1 <- LabelClusters(p1, id = "celltype2", fontface = "bold", color = "white", repel = T, box = T, size = 7)
+```
+
+```{r}
+p2a = plot_density(mono, features = c("CD14", "SELL"), joint = T, pal = 'magma', reduction = "UMAP", size = 2) & NoAxes()
+p2b = plot_density(mono, features = c("CD14", "IL1B"), joint = T, pal = 'magma', reduction = "UMAP", size = 2) & NoAxes()
+p2c = plot_density(mono, features = c("CD14", "FCGR3A"), joint = T, pal = 'magma', reduction = "UMAP", size = 2) & NoAxes()
+p2d = plot_density(mono, features = c("FCGR3A", "FAM110A"), joint = T, pal = 'magma', reduction = "UMAP", size = 2) & NoAxes()
+
+
+p2 = ((p2d[[3]]|p2a[[3]])/(p2b[[3]]|p2c[[3]]))
+```
+
+```{r}
+p3 <- DimPlot(mono, group.by = 'celltype', raster = T, pt.size = 2.5, shuffle = T, cols = mono_pal, seed = 1) + ggtitle("") & NoAxes() & NoLegend()
+
+p3 <- LabelClusters(p3, id = "celltype", fontface = "bold", color = "white", repel = T, box = T, size = 7)
+```
+
+```{r}
+genes <- c("MGP", "SFTPC", "FABP4", "TSEN34", "FOS", "BAZ2B", "SIRPB2", "NLRP1", "DDX17", "FCGR3A", "LYPD2", "MS4A7", "CSF1R", "IFITM2", "G0S2", "IL1B", "CXCL2", "EREG", "THBS1", "CLEC10A", "HLA-DMB", "HLA-DRB6", "CD81", "ACP5", "CXCL10", "IFIT2", "C1QB", "HSPA6", "TRPV2")
+
+expr_a <- averages_mono@assays$RNA@counts %>% as.data.frame()
+colnames(expr_a) = c('MonoInter_CXCL10', 'MonoInter_CLEC10A',  'Mono_IL1B', 'Mono_CD14_FOS-','Mono_FCGR3A', 'Mono_CD14_FOS+')
+
+indx <- which(rownames(expr_a) %in% genes)
+expr_a <- expr_a[indx,]
+expr_a$gene <- rownames(expr_a) 
+expr_a <- expr_a %>%
+  mutate(gene =  factor(gene, levels = genes)) %>%
+  arrange(gene)
+
+mat = as.matrix(expr_a[, grep("Mono", colnames(expr_a))])
+base_mean = rowMeans(mat)
+mat_scaled = t(apply(mat, 1, scale))
+colnames(mat_scaled)  <- colnames(mat)
+
+gene_mono = data.frame(gene = genes)
+expr_a <- inner_join(expr_a, gene_mono)
+
+ann_colors <- list(
+    Celltype = c('Mono_CD14_FOS+' = "#ffaf65", 'Mono_CD14_FOS-' = "#ef3142", 'Mono_FCGR3A' = "#755c46", 'Mono_IL1B' = "#d35b00", 
+             'MonoInter_CLEC10A' = "#b88b97", 'MonoInter_CXCL10' = "#b0003b")
+)
+
+levels <- data.frame(Celltype = factor(colnames(mat_scaled), levels = c('Mono_CD14_FOS+', 'Mono_CD14_FOS-', 'Mono_FCGR3A', 'Mono_IL1B', 
+             'MonoInter_CLEC10A', 'MonoInter_CXCL10')))
+
+levels <- levels %>%
+  mutate(Celltype =  factor(colnames(mat_scaled), levels = c('Mono_CD14_FOS+', 'Mono_CD14_FOS-', 'Mono_FCGR3A', 'Mono_IL1B', 
+             'MonoInter_CLEC10A', 'MonoInter_CXCL10'))) %>%
+  arrange(Celltype)    
+
+mat_scaled <- mat_scaled[, c('Mono_CD14_FOS+', 'Mono_CD14_FOS-', 'Mono_FCGR3A', 'Mono_IL1B', 
+             'MonoInter_CLEC10A', 'MonoInter_CXCL10')]
+
+p4 = ComplexHeatmap::pheatmap(mat_scaled, name = 'z-score', cluster_rows = FALSE, cluster_cols = FALSE,  annotation_colors = ann_colors, annotation_col = levels, scale = 'row', show_colnames = F,color = colorRampPalette(c("navy", "white", "firebrick3"))(50)) %>% ggplotify::as.ggplot()
+```
+
+```{r}
+MK <- c('CD14','FOS', 'CLEC10A', 'CXCL10', 'IL1B', 'FCGR3A')
+
+p5 = DotPlot(
+  mono,
+  features = rev(MK),
+  col.min = 0, col.max = 1, dot.scale = 12,
+  cols = c('white', '#ef3142')
+) + theme(axis.text.x = element_text(angle = 45, hjust = 1))+ xlab("") + ylab("") + guides(color = guide_colorbar(title = "Scaled Average Expression"))
+```
+
+```{r}
+p6 <- dittoBarPlot(mono, group.by = "harm_sample.type", "celltype", scale = "percent", color.panel = mono_pal) + coord_flip() + bar_tema + xlab("")
+```
+
+
+Path
+```{r}
+pathMono = pathMono + dp_tema + ylab("") + xlab("")
+```
+
+
+Panel 2
+
+```{r fig.width=20, fig.height=17}
+panel3a = cowplot::plot_grid(p1,p2, ncol=2, nrow=1, rel_widths = c(0.8,1), heights = c(1), labels = c("a", "b"), hjust = c(-0.5,1,-0.5),  label_size = 20) 
+panel3b = cowplot::plot_grid(p3,p4, ncol=2, nrow=1, rel_widths = c(0.8,1), heights = c(1), labels = c("c", "d"), label_size = 20, hjust = c(-0.5,1,-0.5))
+panel3c1 = cowplot::plot_grid(p5, p6, ncol=1, nrow=2, rel_widths = c(0.5,1), heights = c(1), labels = c("e", "f"), label_size = 20)
+panel3c2 = cowplot::plot_grid(pathMono, ncol=1, nrow=1, rel_widths = c(0.5,1), heights = c(1), labels = c("g"), label_size = 20)
+
+panel3c = (panel3c1 |panel3c2)
+
+panel3 = cowplot::plot_grid(panel3a,panel3b,panel3c, nrow = 3, rel_heights = c(0.6,0.6,0.7)) 
+```
+
+```{r fig.width=22, fig.height=30}
+panel3
+```

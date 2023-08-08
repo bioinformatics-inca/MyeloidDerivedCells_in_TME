@@ -1,0 +1,165 @@
+---
+title: "Figure 2 - cDC"
+output: html_notebook
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r library packages}
+suppressPackageStartupMessages({
+  library(Seurat)
+  library(dplyr)
+  library(ggplot2)
+  library(dittoSeq)
+  library(RColorBrewer)
+  library(stringr)
+  library(grid)
+  library(Nebulosa)
+  library(clusterProfiler)
+  library(ReactomePA)
+  library(AnnotationDbi)
+  library(EnsDb.Hsapiens.v86)
+  library(ggplotify)
+})
+```
+
+```{r}
+load("/data/02_cdcfigure.RData")
+```
+
+```{r fig.height=6, fig.width=9}
+bar_tema = list(
+  theme(
+    plot.title = element_text(size=0),
+    plot.subtitle = element_text(size=0),
+    axis.text.x = element_text(size = 20, angle=0, hjust = 0.5, color = 'black'),
+    axis.text.y = element_text(size = 20, color = 'black'),
+    axis.title.y = element_text(size = 20),
+    axis.title.x = element_text(size = 20),
+    legend.text = element_text(size = 20),
+    #legend.position="bottom"
+  ))
+
+dp_tema <- list(
+  theme(
+    plot.title = element_text(size = 0),
+    plot.subtitle = element_text(size = 0),
+    axis.text.x = element_text(size = 18, angle = 45, hjust = 1, vjust = 1, color = 'black'),
+    axis.text.y = element_text(size = 18, color = 'black'),
+    axis.title.y = element_text(size = 18),
+    axis.title.x = element_text(size = 18),
+    legend.text = element_text(size = 18)
+))
+
+dc_pal <- rev(c('cDC2A_AREG' = "#45a4d5", 'cDC2_CXCL8' = "#91b0b9", 'cDC2_CD14' = "#2e525e", 'cDC2B_FCER1A' = "#beaac1", 
+                'cDC1_CLEC9A' = "#477784", 'cDC2_CD207' = "#86638c", 'cDC2_FCGR3A' = "#cfa8d5", 'cDC_LAMP3' = "#a2c6ff"))
+dc_pal2 = rev(c('cDC2' = "#45a4d5", 
+                'cDC1' = "#477784", 'cDC_Mig' = "#a2c6ff"))
+```
+
+
+CDC
+
+```{r}
+cdc$celltype2 <- cdc$celltype
+cdc$celltype2 <- gsub("cDC1_CLEC9A","cDC1", cdc$celltype2)
+cdc$celltype2 <- gsub("cDC2A_AREG|cDC2B_FCER1A|cDC2_CD207|cDC2_CD14|cDC2_FCGR3A|cDC2_CXCL8", "cDC2", cdc$celltype2)
+cdc$celltype2 <- gsub("cDC_LAMP3","cDC_Mig", cdc$celltype2)
+
+p1 <- DimPlot(cdc, group.by = 'celltype2', raster = T, pt.size = 2.5, shuffle = T, cols = dc_pal2, seed = 1) + ggtitle("") & NoAxes() & NoLegend()
+
+p1 <- LabelClusters(p1, id = "celltype2", fontface = "bold", color = "white", repel = T, box = T, size = 10)
+```
+
+```{r}
+p2a = plot_density(cdc, features = c("CLEC9A", "CADM1"), joint = T, pal = 'magma') & NoAxes()
+p2b = plot_density(cdc, features = c("CLEC10A", "CD1C"), joint = T, pal = 'magma') & NoAxes()
+p2c = plot_density(cdc, features = c("LAMP3", "CCR7"), joint = T, pal = 'magma') & NoAxes()
+
+
+p2 = (p2a/p2b/p2c)
+```
+
+```{r}
+p3 <- DimPlot(cdc, group.by = 'celltype', raster = T, pt.size = 2.5, shuffle = T, cols = dc_pal, seed = 1) + ggtitle("") & NoAxes() & NoLegend()
+
+p3 <- LabelClusters(p3, id = "celltype", fontface = "bold", color = "white", repel = T, box = T, size = 10)
+```
+
+```{r}
+top10 <- deg_cdc %>% group_by(cluster) %>% top_n(n = 8, wt = avg_log2FC)
+top10$cluster <- factor(top10$cluster, levels = c("cDC1_CLEC9A", "cDC2A_AREG",  "cDC2_CXCL8", "cDC2B_FCER1A", "cDC2_CD207", "cDC2_FCGR3A", "cDC2_CD14", "cDC_LAMP3"))
+top10 <- top10 %>% arrange(cluster)
+
+expr_a <- averages_cdc@assays$RNA@counts %>% as.data.frame()
+
+indx <- which(rownames(expr_a) %in% top10$Gene)
+expr_a <- expr_a[indx,]
+expr_a$gene <- rownames(expr_a) 
+expr_a <- expr_a %>%
+  mutate(gene =  factor(gene, levels = top10$Gene)) %>%
+  arrange(gene)
+
+mat = as.matrix(expr_a[, grep("cDC", colnames(expr_a))])
+base_mean = rowMeans(mat)
+mat_scaled = t(apply(mat, 1, scale))
+colnames(mat_scaled)  <- colnames(mat)
+
+expr_a <- inner_join(expr_a, top10)
+
+ann_colors <- list(
+    Celltype = c('cDC2A_AREG' = "#45a4d5", 'cDC2_CXCL8' = "#91b0b9", 'cDC2_CD14' = "#2e525e", 'cDC2B_FCER1A' = "#beaac1", 
+                'cDC1_CLEC9A' = "#477784", 'cDC2_CD207' = "#86638c", 'cDC2_FCGR3A' = "#cfa8d5", 'cDC_LAMP3' = "#a2c6ff")
+)
+
+levels <- data.frame(Celltype = factor(colnames(mat_scaled), levels =  c("cDC1_CLEC9A", "cDC2A_AREG",  "cDC2_CXCL8", "cDC2B_FCER1A", "cDC2_CD207", "cDC2_FCGR3A", "cDC2_CD14", "cDC_LAMP3")))
+
+levels <- levels %>%
+  mutate(Celltype =  factor(colnames(mat_scaled), levels =  c("cDC1_CLEC9A", "cDC2A_AREG",  "cDC2_CXCL8", "cDC2B_FCER1A", "cDC2_CD207", "cDC2_FCGR3A", "cDC2_CD14", "cDC_LAMP3"))) %>%
+  arrange(Celltype)    
+
+mat_scaled <- mat_scaled[,  c("cDC1_CLEC9A", "cDC2A_AREG",  "cDC2_CXCL8", "cDC2B_FCER1A", "cDC2_CD207", "cDC2_FCGR3A", "cDC2_CD14", "cDC_LAMP3")]
+breaksList = seq(-2, 2, by = 1)
+
+p4 = ComplexHeatmap::pheatmap(mat_scaled, name = "z-score", cluster_rows = FALSE, cluster_cols = FALSE,breaks = breaksList, annotation_colors = ann_colors, annotation_col = levels, show_colnames = F, color = colorRampPalette(c("navy", "white", "firebrick3"))(50)) %>% ggplotify::as.ggplot()
+```
+
+```{r}
+Idents(cdc) <- cdc$celltype
+
+MK <- rev(c("CLEC9A", "CADM1", "CD1C", "FCER1A", "CD207", "CD1A", "CLEC10A", "AREG",
+                      "CD14","FCGR3A","CXCL8", "CXCL2", "LAMP3", "CCR7"))
+
+p5 = DotPlot(
+  cdc,
+  features = MK,
+  col.min = 0.1, col.max = 4,
+  cols = c('white', '#2e525e')
+) + theme(axis.text.x = element_text(angle = 45, hjust = 1)) + xlab("") + ylab("") + guides(color = guide_colorbar(title = "Scaled Average Expression"))
+```
+
+
+```{r}
+p6 <- dittoBarPlot(cdc, group.by = "harm_sample.type", "celltype", scale = "percent", color.panel = dc_pal, retain.factor.levels = T) + coord_flip() + bar_tema + xlab("")
+```
+
+```{r}
+pathcDCs = pathcDCs + dp_tema + ylab("") + xlab("")
+```
+
+```{r fig.width=20, fig.height=17}
+panel2a = cowplot::plot_grid(p1,p2, ncol=2, nrow=1, rel_widths = c(0.8,1), heights = c(1), labels = c("a", "b"), hjust = c(-0.5,1,-0.5),  label_size = 20) 
+panel2b = cowplot::plot_grid(p3,p4, ncol=2, nrow=1, rel_widths = c(0.8,1), heights = c(1), labels = c("c", "d"), label_size = 20, hjust = c(-0.5,1,-0.5))
+panel2c1 = cowplot::plot_grid(p5,p6, ncol=1, nrow=2, rel_widths = c(0.5,1), heights = c(1), labels = c("e", "f"), label_size = 20)
+panel2c2 = cowplot::plot_grid(pathcDCs, ncol=1, nrow=1, rel_widths = c(0.5,1), heights = c(1), labels = c("g"), label_size = 20)
+
+panel2c = (panel2c1 |panel2c2)
+
+
+panel2 = cowplot::plot_grid(panel2a,panel2b,panel2c, nrow = 3, rel_heights = c(0.6,0.6,0.55)) 
+```
+
+```{r fig.width=22, fig.height=32}
+panel2
+```
+

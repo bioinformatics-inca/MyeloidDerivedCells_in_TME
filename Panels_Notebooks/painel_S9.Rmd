@@ -1,0 +1,115 @@
+---
+title: "Figure S8 - immunosuppressive signatures"
+output: html_notebook
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r library packages}
+suppressPackageStartupMessages({
+  library(Seurat)
+  library(dplyr)
+  library(ggplot2)
+  library(dittoSeq)
+  library(RColorBrewer)
+  library(gridExtra)
+  library(grid)
+  library(ggpubr)
+  library(dittoSeq)
+  library(clusterProfiler)
+  library(ReactomePA)
+  library(AnnotationDbi)
+  library(EnsDb.Hsapiens.v86)
+  library(ggplotify)
+})
+```
+
+```{r}
+load("/data/S9_figure.RData")
+```
+
+```{r}
+gene = c("CD84", "CTSD", "ARG2", "PLA2G7", "IL1B", "CLEC4E", "IL1F9", "CSTA", "WFDC17")
+
+expr_a <- myeloid_averages@assays$RNA@counts %>% as.data.frame()
+colnames(expr_a) <- ifelse(colnames(expr_a) == "Mono_CD16", "Mono_FCGR3A", ifelse(colnames(expr_a) == "MonoInter_FOS+", "MonoInter_CLEC10A", ifelse(colnames(expr_a) == "MonoInter_FOS-", "MonoInter_CXCL10", colnames(expr_a))))
+colnames(expr_a) <- ifelse(colnames(expr_a) == 'Mac_Reg', 'Mac_AgPres', colnames(expr_a))
+indx <- which(rownames(expr_a) %in% gene)
+expr_a <- expr_a[indx,]
+expr_a$gene <- rownames(expr_a) 
+expr_a <- expr_a %>%
+  mutate(gene =  factor(gene, levels =c("CD84", "CTSD", "ARG2", "PLA2G7", "IL1B", "CLEC4E", "IL1F9", "CSTA", "WFDC17"))) %>%
+  arrange(gene)
+
+exp = expr_a[ ,1:29]
+mat = as.matrix(exp)
+base_mean = rowMeans(mat)
+mat_scaled = t(apply(mat, 1, scale))
+colnames(mat_scaled)  <- colnames(mat)
+
+gene = gene %>% as.data.frame()
+gene$gene = gene$.
+gene$. = NULL
+expr_a <- inner_join(expr_a, gene)
+
+celltypes <- c('Mast_cells', 'Neutrophil_CXCL8', 'Neutrophil_MMP9', 'Neutrophil_TAGLN2', 'cDC_LAMP3', 'cDC1_CLEC9A', 'cDC2_CD14', 'cDC2_CD207', 'cDC2_CXCL8', 'cDC2_FCGR3A', 'cDC2A_AREG', 'cDC2B_FCER1A', 'Mono_CD14_FOS-', 'Mono_CD14_FOS+', 'Mono_FCGR3A', 'Mono_IL1B', 'MonoInter_CXCL10', 'MonoInter_CLEC10A', 'Mac_Alv-like', 'Mac_Angio', 'Mac_Hypo', 'Mac_IFN', 'Mac_LA', 'Mac_Rec', 'Mac_AgPres', 'RTM_IFN', 'RTM_IM', 'RTM_LA', 'RTM-like_MT')
+
+ann_colors <- list(Celltype = c(
+  'Mast_cells' = '#821764',
+  'Neutrophil_CXCL8' = "#550000ff",
+  'Neutrophil_MMP9' = "#c83737ff",
+  'Neutrophil_TAGLN2' = "#ff8080ff",
+  "Mac_Alv-like" = "#8B87FE",
+  "Mac_Angio" = "#DC4A82",
+  "Mac_Hypo" = "#FFA8DE",
+  "Mac_IFN" = "#6B6AF4",
+  "Mac_LA" = "#BD26DE",
+  "Mac_Prolif" = "#CFB8D9",
+  "Mac_Rec" = "#BF8FFF",
+  "Mac_AgPres" = "#00AEEE",
+  "RTM_IM" = "#1be19f",
+  "RTM_IFN" = "#a2db71",
+  "RTM_LA" = "#4ddfc8",
+  "RTM-like_MT" = "#579C99",
+  'Mono_CD14_FOS+' = "#ffaf65",
+  'Mono_CD14_FOS-' = "#ef3142",
+  'Mono_FCGR3A' = "#755c46",
+  'Mono_IL1B' = "#d35b00",
+  'MonoInter_CLEC10A' = "#b88b97",
+  'MonoInter_CXCL10' = "#b0003b",
+  'cDC2A_AREG' = "#45a4d5",
+  'cDC2_CXCL8' = "#91b0b9",
+  'cDC2_CD14' = "#2e525e",
+  'cDC2B_FCER1A' = "#beaac1",
+  'cDC1_CLEC9A' = "#477784",
+  'cDC2_CD207' = "#86638c",
+  'cDC2_FCGR3A' = "#cfa8d5",
+  'cDC_LAMP3' = "#a2c6ff"
+))
+
+levels <- data.frame(Celltype = factor(colnames(mat_scaled), levels = celltypes))
+
+levels <- levels %>%
+  mutate(Celltype = factor(colnames(mat_scaled), levels = celltypes)) %>%
+  arrange(Celltype)    
+
+breaksList = seq(-1.5, 1.5, by = 0.5)
+
+p2 = ComplexHeatmap::pheatmap(
+  mat_scaled,
+  name = 'z-score',
+  annotation_col = levels,
+  annotation_colors = ann_colors,
+  cluster_rows = FALSE,
+  show_colnames = F,
+  breaks = breaksList,
+  cluster_cols = FALSE,
+  color = colorRampPalette(c("navy", "white", "firebrick3"))(50)
+) %>% ggplotify::as.ggplot()
+panelS8 = p2
+```
+
+```{r fig.height=5, fig.width=12}
+panelS8
+```
+

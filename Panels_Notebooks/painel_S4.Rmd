@@ -1,0 +1,97 @@
+---
+title: "Figure 2 - Mono e cDC"
+output: html_notebook
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r library packages}
+suppressPackageStartupMessages({
+  library(Seurat)
+  library(dplyr)
+  library(ggplot2)
+  library(dittoSeq)
+  library(RColorBrewer)
+  library(gridExtra)
+  library(grid)
+  library(Nebulosa)
+  library(ggpubr)
+})
+```
+
+```{r}
+load("/data/S4_figure.RData")
+```
+
+```{r fig.height=6, fig.width=9}
+bar_tema = list(
+  theme(
+    plot.title = element_text(size=0),
+    plot.subtitle = element_text(size=0),
+    axis.text.x = element_text(size = 20, angle=0, hjust = 0.5, color = 'black'),
+    axis.text.y = element_text(size = 20, color = 'black'),
+    axis.title.y = element_text(size = 20),
+    axis.title.x = element_text(size = 20),
+    legend.text = element_text(size = 20),
+    #legend.position="bottom"
+  ))
+
+dp_tema <- list(
+  theme(
+    plot.title = element_text(size=0),
+    plot.subtitle = element_text(size=0),
+    axis.text.x = element_text(size = 20, angle=45, hjust = 1, color = 'black'),
+    axis.text.y = element_text(size = 20, color = 'black'),
+    axis.title.y = element_text(size = 20),
+    axis.title.x = element_text(size = 20),
+    legend.text = element_text(size = 20),
+    #legend.position="bottom"
+  ))
+
+mono_pal <- c('Mono_CD14_FOS+' = "#ffaf65", 'Mono_CD14_FOS-' = "#ef3142", 'Mono_FCGR3A' = "#755c46", 'Mono_IL1B' = "#d35b00", 'MonoInter_CLEC10A' = "#b88b97", 'MonoInter_CXCL10' = "#b0003b")
+
+mono_pal2 <- c('Mono_Classical' = "#ef3142", 'Mono_Non-Classical' = "#b0003b", 'Mono_Inflammatory' = "#d35b00", 'Mono_Intermediate' = "#b88b97")
+```
+
+```{r}
+p1 <- dittoBarPlot(mono, group.by = "harm_sample.type", "celltype", scale = "count", color.panel = mono_pal) + coord_flip() + bar_tema + xlab("")
+```
+
+```{r}
+p2 <- dittoBarPlot(mono, group.by = "condition2", "celltype", scale = "percent", color.panel = mono_pal, retain.factor.levels = T) + coord_flip() + bar_tema + xlab("")
+```
+
+```{r}
+p3 <- dittoBarPlot(mono, group.by = "condition2", "celltype", scale = "count", color.panel = mono_pal, retain.factor.levels = T) + coord_flip() + bar_tema + xlab("")
+```
+
+```{r}
+inflammatory <- infla$`infla[-1, ]`
+mono <- UCell::AddModuleScore_UCell(obj = mono, features = list(c(inflammatory)), name = "Inflammatory_Score")
+
+order = reorder(mono$celltype, -mono@meta.data$signature_1Inflammatory_Score)
+mono$celltype <- factor(mono$celltype, levels = levels(order))
+
+p4 <- ggviolin(mono@meta.data, x = "celltype", y = "signature_1Inflammatory_Score", 
+               fill = "celltype",
+               palette = mono_pal,
+               add = "boxplot", add.params = list(fill = "white"),
+               ylab = "Inflammation Score", xlab = "") +
+  stat_compare_means(label = "p.signif", method = "wilcox", ref.group = ".all.",
+                     hide.ns = FALSE, show.legend = FALSE) +
+  stat_compare_means(method = "kruskal.test", label.y = 0.45) +
+  geom_hline(yintercept = mean(mono@meta.data$signature_1Inflammatory_Score), linetype = 2) +
+  dp_tema + 
+  NoLegend()
+```
+
+```{r fig.height=17.55, fig.width=17.55}
+panelS4a = cowplot::plot_grid(p1, p2, ncol=2, nrow=1,rel_widths = c(1,1),  labels = c("a", "b"), hjust = c(0,0.5), label_size = 20) 
+panelS4b = cowplot::plot_grid(p3,p4, ncol=2, nrow=1,rel_widths = c(1,1), labels = c("c", "d"), label_size = 20, hjust = c(0,1))
+
+panel_S4 = patchwork::wrap_plots(panelS4a, panelS4b, ncol = 1) + patchwork::plot_layout(heights = c(0.7,0.9))
+```
+
+```{r fig.height=9, fig.width=16}
+panel_S4
+```
